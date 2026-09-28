@@ -1,0 +1,14 @@
+{"title":"LAST LIGHT — build progress","started":"2026-09-25 22:05","deadline":"23:05",
+"pieces":[
+ {"id":"foundation","name":"Foundation build"},
+ {"id":"flashlight","name":"Flashlight & torch feel"},
+ {"id":"monsters","name":"The Deer & the bear stalking after dark"},
+ {"id":"campfire","name":"Campfire: fuel, light, safety"},
+ {"id":"daynight","name":"Day/night cycle & atmosphere"},
+ {"id":"forest","name":"Forest world & chopping"},
+ {"id":"controls","name":"Movement, camera & controls"},
+ {"id":"survival","name":"Hunger, food & inventory"},
+ {"id":"audio","name":"Sound design"},
+ {"id":"ui","name":"HUD, title, death & win screens"},
+ {"id":"integration","name":"Whole-game playthrough & polish"}
+]}

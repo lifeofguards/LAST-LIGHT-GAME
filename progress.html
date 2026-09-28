@@ -1,0 +1,36 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Last Light Progress</title>
+<style>
+:root{--bg:#0d1110;--card:#161c1a;--ink:#e8efe9;--dim:#8a9a90;--line:#26302c;--fire:#ff9a3c;--win:#7fd99a;--lose:#ff6b6b;--wip:#ffd166}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,sans-serif;padding:24px 16px}
+.wrap{max-width:1180px;margin:0 auto}h1{margin:0 0 4px;font-size:26px;letter-spacing:.02em}h1 span{color:var(--fire)}
+.sub{color:var(--dim);margin-bottom:18px}.sub a{color:var(--fire)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.card img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block;background:#000}
+.noimg{aspect-ratio:16/9;display:grid;place-items:center;color:var(--dim);background:#0a0d0c}
+.body{padding:12px 14px}.row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.name{font-weight:650}.pill{font-size:12px;padding:2px 9px;border-radius:99px;border:1px solid currentColor;white-space:nowrap}
+.pending{color:var(--dim)}.building{color:var(--wip)}.judging{color:#8ecbff}.won{color:var(--win)}.lost{color:var(--lose)}.done{color:var(--win)}
+.meta{color:var(--dim);font-size:13px;margin-top:6px}.gap{margin-top:8px;font-size:13.5px}
+.gap b{color:var(--fire)}details{margin-top:8px;font-size:13px;color:var(--dim)}details li{margin:3px 0}
+</style></head><body><div class="wrap">
+<h1>LAST <span>LIGHT</span> — live build</h1>
+<div class="sub" id="sub">loading…</div>
+<div class="grid" id="grid"></div></div>
+<script>
+async function j(u){try{const r=await fetch(u+'?t='+Date.now());if(!r.ok)return null;return await r.json()}catch(e){return null}}
+async function tick(){
+ const m=await j('progress/manifest.json');if(!m)return;
+ document.getElementById('sub').innerHTML=`Started ${m.started} · hard stop ${m.deadline} · <a href="index.html" target="_blank">▶ Play the current build</a> · refreshes every 4s`;
+ const cards=await Promise.all(m.pieces.map(async p=>({p,s:await j('progress/'+p.id+'.json')})));
+ document.getElementById('grid').innerHTML=cards.map(({p,s})=>{s=s||{status:'pending'};
+  const img=s.shot?`<img src="${s.shot}?t=${Date.now()}" alt="">`:`<div class="noimg">no screenshot yet</div>`;
+  const hist=(s.history||[]).map(h=>`<li>${h}</li>`).join('');
+  return `<div class="card">${img}<div class="body"><div class="row"><div class="name">${p.name}</div><span class="pill ${s.status}">${s.status}${s.round?' · round '+s.round:''}</span></div>
+  ${s.note?`<div class="meta">${s.note}</div>`:''}
+  ${s.gap?`<div class="gap"><b>Biggest gap:</b> ${s.gap}</div>`:''}
+  ${hist?`<details><summary>History</summary><ul>${hist}</ul></details>`:''}</div></div>`}).join('');
+}
+tick();setInterval(tick,4000);
+</script></body></html>

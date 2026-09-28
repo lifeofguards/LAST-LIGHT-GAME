@@ -1,0 +1,16 @@
+{
+ "status": "done",
+ "round": 3,
+ "note": "Round 3: death screen now shows the night count once, with the cause underneath. Day 1, feeding the fire, fire-out night and death all replayed correctly.",
+ "gap": "The shared dev server drops module requests under parallel load, so some headless runs load a black page. The game code is fine.",
+ "shot": "shots/integration2/06_night.png",
+ "history": [
+  "Started whole-game playthrough: title, day 1, night 1, later nights, win, death and restart.",
+  "Full playthrough verified with zero console errors: chop, log pickup, fire feed, berries, NIGHT/DAY cards, flashlight stun, fire-out lunge, win, death and R to restart.",
+  "Fixes: gentler first-night fire burn that ramps up to night 5, clearer first objective hint, berry hint points to the forest, title adds flashlight-at-eyes and Q/M keys, fire marker arrow no longer covers its distance label, README written.",
+  "Round 2 started: full replay after nine specialists' new changes.",
+  "Round 2 done: whole loop verified with zero console errors and no integration breaks found. README is current.",
+  "Round 3 started: full replay and fix the doubled night count on the death screen.",
+  "Round 3 done: fixed the doubled night count on the death screen (big number plus cause line, with \"night\" or \"nights\" to match). Replay passed; no game console errors."
+ ]
+}
