@@ -258,7 +258,7 @@ export function buildCave(G, site) {
     const dl = G.daynight ? G.daynight.daylight : 1;
     glowM.visible = depth > 0.05; glowMat.opacity = depth * (0.25 + dl * 0.55); if (glowM.visible && G.scene.fog) glowMat.color.copy(G.scene.fog.color).lerp(new THREE.Color(1, 1, 1), 0.25 * dl);
     lockGlow.material.opacity = cave.locked ? 0.3 + 0.18 * Math.sin(t * 3) : 0;
-    chestGlint.material.opacity = cave.chestOpen ? 0 : (0.16 + 0.12 * Math.sin(t * 2.2)) * (0.4 + depth);
+    chestGlint.material.opacity = cave.chestOpen ? 0 : (0.2 + 0.12 * Math.sin(t * 2.2)) * (0.4 + depth * 1.4); // a warm glint that finds the chest in the dark
     if (lockDrop) {
       lockDrop.t += dt; lockDrop.vy -= 14 * dt; lock.position.y = Math.max(0.12, lock.position.y + lockDrop.vy * dt); lock.position.z += dt * 0.9; lock.rotation.x += dt * 6;
       if (lockDrop.t > 3) { lock.visible = false; lockDrop = null; }

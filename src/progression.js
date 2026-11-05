@@ -193,13 +193,13 @@ export function createProgression(G) {
   prog.getInteraction = (p) => {
     let best = null;
     const offer = (d, label, action, disabled = false) => { if (!best || d < best.dist) best = { dist: d, label, action: disabled ? () => {} : action, disabled }; };
-    for (const k of prog.keys) { const d = Math.hypot(k.x - p.x, k.z - p.z); if (d < 2.3) offer(d - 0.5, `[E] Pick up the ${keyName(k.id)}`, () => takeKey(k)); }
+    for (const k of prog.keys) { const d = Math.hypot(k.x - p.x, k.z - p.z); if (d < 2.3) offer(d - 1.6, `[E] Pick up the ${keyName(k.id)}`, () => takeKey(k)); } // beats the meat that dropped beside it
     for (const c of prog.caves) {
       const I = impl[c.id];
       if (c.locked) {
         const d = Math.hypot(I.gateWorld.x - p.x, I.gateWorld.z - p.z);
         if (d < 3.4 && I.where(p.x, p.z) !== 'inside') {
-          if (inv.keys[c.id]) offer(d, `[E] Unlock ${CAVE_NAMES[c.id]} (${keyName(c.id)})`, () => unlockCave(c.id));
+          if (inv.keys[c.id]) offer(d - 1.2, `[E] Unlock ${CAVE_NAMES[c.id]} (${keyName(c.id)})`, () => unlockCave(c.id));
           else offer(d + 0.3, c.cleared ? `Locked · pick up the ${keyName(c.id)} the last ${c.type === 'bear' ? 'gray bear' : 'wolf'} dropped` : `Locked · ${c.type === 'bear' ? 'the gray bears guard' : 'the wolf pack carries'} the key`, null, true);
         }
       } else if (!c.chestOpen) {
@@ -212,7 +212,7 @@ export function createProgression(G) {
     }
     if (!region.open) {
       const gw = mountain.gateWorld, d = Math.hypot(gw.x - p.x, gw.z - p.z);
-      if (d < 4.6) { if (inv.keys.mountain) offer(d, '[E] Unlock the Mountain Gate (Mountain Key)', () => openRegion()); else offer(d + 0.3, 'The Mountain Gate is sealed · the Alpha holds its key', null, true); }
+      if (d < 4.6) { if (inv.keys.mountain) offer(d - 1.2, '[E] Unlock the Mountain Gate (Mountain Key)', () => openRegion()); else offer(d + 0.3, 'The Mountain Gate is sealed · the Alpha holds its key', null, true); }
     }
     return best;
   };
@@ -245,6 +245,7 @@ export function createProgression(G) {
       return [`Search ${CAVE_NAMES[c.id]}`, `Bring the flashlight · chest at the back · ${dirTo(c.interior.x, c.interior.z)}`];
     }
     if (inv.keys.mountain && !region.open) return ['Open the Mountain Gate', `End of the old trail · ${dirTo(MOUNTAIN.gate.x, MOUNTAIN.gate.z)}`];
+    if (region.open && !prog.mountainVisited) return ['Climb into the Mountain', `Through the gate and up the pass · ${dirTo(MOUNTAIN.field.x, MOUNTAIN.field.z)}`];
     for (const c of prog.caves) if (c.level <= prog.fireLevel && !c.cleared) return [c.type === 'bear' ? 'Defeat the gray bears' : 'Clear the wolf pack', `${CAVE_NAMES[c.id].replace(/^the/, 'The')} · ${dirTo(c.clearing.x, c.clearing.z)}`];
     if (prog.fireLevel < 4) { const L = prog.levelInfo(); return ['Grow the fire', `${L.text} · each level pushes back the fog`]; }
     return null;
@@ -266,7 +267,7 @@ export function createProgression(G) {
       dn.darkness = Math.max(dn.darkness, 0.95 * k); dn.daylight = 1 - dn.darkness;
       if (f) { f.color.lerp(black, k * 0.92); f.far = f.far + (24 - f.far) * k; if (scene.background && scene.background.isColor) scene.background.copy(f.color); }
     }
-    const mk = mountain.depth(P.x, P.z); prog.inMountain = mk;
+    const mk = mountain.depth(P.x, P.z); prog.inMountain = mk; if (mk > 0.6) prog.mountainVisited = true;
     if (mk > 0.002) {
       const nd = dn.darkness;
       dn.hemi.color.lerp(cold.sky, mk * 0.45); dn.hemi.groundColor.lerp(cold.gnd, mk * 0.6); dn.sun.color.lerp(cold.sun, mk * 0.5);
@@ -296,8 +297,15 @@ export function createProgression(G) {
       k.glow.position.y = k.mesh.position.y; k.glow.material.opacity = 0.55 + 0.2 * Math.sin(k.t * 4);
       k.beam.material.opacity = 0.22 + 0.12 * (G.daynight.darkness || 0) + 0.06 * Math.sin(k.t * 3);
     }
+    // standing over a closed chest the avatar would hide it: ghost the avatar so the chest (and its glint) reads
+    if (G.mode === 'playing' && prog._caveId && G.player) { const c = caveById(prog._caveId), cw = impl[prog._caveId].chestWorld;
+      if (c && !c.locked && !c.chestOpen && Math.hypot(cw.x - P.x, cw.z - P.z) < 3.4) G.player.setFade(Math.min(G.player.fade ?? 1, 0.55)); }
+    // first steps into a black chamber without a light: say how to fix that
+    if (prog.inCave && prog.inCave !== lastCave && G.mode === 'playing' && !G.flashlight.on && G.time - darkHintT > 25) { darkHintT = G.time; G.ui?.toast?.('It\'s pitch black in here. Press F for your flashlight.', 3); }
+    lastCave = prog.inCave;
     drawHud();
   };
+  let lastCave = null, darkHintT = -99;
 
   // ---------- debug helpers (window.__game wires these) ----------
   prog.debug = {

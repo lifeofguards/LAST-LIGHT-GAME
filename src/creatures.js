@@ -109,6 +109,8 @@ export function createCreatures(G) {
     box(w, h, d, m, x = 0, y = 0, z = 0, shadow = true) { const b = new THREE.Mesh(geo(w, h, d), m); b.position.set(x, y, z); b.castShadow = shadow; return b; },
     fireLevel: () => G.progression?.fireLevel ?? 1,
     limitR: () => G.progression?.limitR ?? 60,
+    landR: () => G.progression?.forestR ?? G.progression?.limitR ?? 60,   // the open forest disk (limitR also spans the Mountain once it opens)
+    inLand: (x, z, pad = 0) => (G.progression && G.progression.inBounds ? G.progression.inBounds(x, z, -pad) : Math.hypot(x, z) < K.landR() - pad),
     dark: () => G.daynight.darkness ?? 0,
     night: () => G.daynight.phase === 'night',
     playing: () => G.mode === 'playing',
@@ -147,9 +149,15 @@ export function createCreatures(G) {
         const a = Math.random() * 6.28, r = Math.sqrt(minR * minR + Math.random() * (maxR * maxR - minR * minR));
         const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
         if (awayFrom && Math.hypot(x - awayFrom.x, z - awayFrom.z) < awayD) continue;
+        if (!K.inLand(x, z, 4)) continue;   // the exact playable shape: never in the fog band past the edge
         if (K.clearSpot(x, z, clr)) { out.x = x; out.z = z; return true; }
       }
-      const a = Math.random() * 6.28; out.x = cx + Math.cos(a) * (minR + maxR) / 2; out.z = cz + Math.sin(a) * (minR + maxR) / 2; return false;
+      for (let i = 0; i < 20; i++) { // fallback: any open-land spot in the ring, pulled inward until it is in bounds
+        const a = Math.random() * 6.28; let r = (minR + maxR) / 2;
+        for (let k = 0; k < 8 && !K.inLand(cx + Math.cos(a) * r, cz + Math.sin(a) * r, 4); k++) r *= 0.8;
+        out.x = cx + Math.cos(a) * r; out.z = cz + Math.sin(a) * r; if (K.inLand(out.x, out.z, 4)) return false;
+      }
+      return false;
     },
     // a creature registers itself as an axe target: { pos, radius, canHit(), hurt(dmg, fromPos) }
     addTarget(t) { cr.targets.push(t); },
@@ -175,6 +183,11 @@ export function createCreatures(G) {
     let best = null, bd = 1e9;
     for (const t of cr.targets) {
       if (!t.canHit()) continue;
+      const B = cr.bodyOf && cr.bodyOf(t);
+      if (B) { // big bears: measure reach from the body's surface (the Alpha is 6 m nose to tail)
+        const r = cr.reachQ(B, pp, fwd); if (r < 1 && r < bd) { bd = r; best = t; }
+        continue;
+      }
       const dx = t.pos.x - pp.x, dz = t.pos.z - pp.z, l = Math.hypot(dx, dz);
       if (l > 2.3 + t.radius) continue;
       const dot = (dx * fwd.x + dz * fwd.z) / (l || 1);
@@ -187,12 +200,83 @@ export function createCreatures(G) {
     return true;
   };
 
+  // ---------------- big bodies: the player can't walk into a bear, and the camera never ends up inside one ----------------
+  // Each bear (brown, gray, the Alpha) is an ellipsoid along its heading, scaled by the rig and lifted when it rears.
+  // controls.js calls blockPlayer() after its own collisions and clampCamera() before placing the camera.
+  const bodies = [];
+  const addBody = (e, s) => bodies.push({ e, s });
+  if (G.bear) addBody(G.bear, 1);
+  for (const b of cr.gray.bears) addBody(b, b.scale);
+  addBody(cr.gray.alpha, cr.gray.alpha.scale);
+  const live = (e) => e.state !== 'dead' && e.state !== 'hidden' && e.root && e.root.visible;
+  const ell = { cx: 0, cy: 0, cz: 0, sh: 0, ch: 1, ax: 1, ay: 1, az: 1 };
+  function shape(B, pad) {
+    const e = B.e, s = B.s, rr = Math.max(0, Math.min(1, e.rear || 0)), h = e.heading || 0;
+    ell.sh = Math.sin(h); ell.ch = Math.cos(h);
+    const fwd = 0.45 * s * (1 - rr * 0.7);
+    ell.cx = e.pos.x + ell.sh * fwd; ell.cz = e.pos.z + ell.ch * fwd; ell.cy = (1.1 + rr * 0.8) * s;
+    ell.ax = 0.82 * s + pad; ell.az = (1.8 - rr * 0.9) * s + pad; ell.ay = (1.2 + rr * 0.9) * s + pad;
+  }
+  const q3 = (x, y, z) => { const dx = x - ell.cx, dz = z - ell.cz, lz = dx * ell.sh + dz * ell.ch, lx = dx * ell.ch - dz * ell.sh, ly = y - ell.cy;
+    return Math.sqrt((lx / ell.ax) ** 2 + (ly / ell.ay) ** 2 + (lz / ell.az) ** 2); };
+  cr.blockPlayer = (p) => {
+    for (const B of bodies) {
+      if (!live(B.e)) continue;
+      const dx0 = p.x - B.e.pos.x, dz0 = p.z - B.e.pos.z; if (dx0 * dx0 + dz0 * dz0 > 49 * B.s * B.s) continue;
+      shape(B, 0.42);
+      const dx = p.x - ell.cx, dz = p.z - ell.cz, lz = dx * ell.sh + dz * ell.ch, lx = dx * ell.ch - dz * ell.sh;
+      const q = Math.hypot(lx / ell.ax, lz / ell.az); if (q >= 1) continue;
+      const k = q > 1e-3 ? 1 / q : 1, nx = q > 1e-3 ? lx * k : ell.ax, nz = q > 1e-3 ? lz * k : 0; // out to the rim
+      p.x = ell.cx + nx * ell.ch + nz * ell.sh; p.z = ell.cz - nx * ell.sh + nz * ell.ch;
+    }
+  };
+  cr.bodyOf = (e) => { for (const B of bodies) if (B.e === e) return B; return null; };
+  // < 1 when the axe (swung from pp along fwd) reaches this body; smaller is closer
+  cr.reachQ = (B, pp, fwd) => {
+    shape(B, 0.42 + 1.75);
+    const dx = pp.x - ell.cx, dz = pp.z - ell.cz, lz = dx * ell.sh + dz * ell.ch, lx = dx * ell.ch - dz * ell.sh, q = Math.hypot(lx / ell.ax, lz / ell.az);
+    if (q >= 1) return 9;
+    const l = Math.hypot(dx, dz) || 1; if ((-dx * fwd.x - dz * fwd.z) / l < 0.1) return 9; // must be swinging toward it
+    return q - 1; // always < 1 here; ranks against the small creatures' (l - radius) metres loosely
+  };
+  const cv = new THREE.Vector3();
+  // pulls `cam` toward `pivot` until it sits outside every bear; returns true if it moved
+  cr.clampCamera = (cam, pivot) => {
+    let moved = false;
+    for (const B of bodies) {
+      if (!live(B.e)) continue;
+      const dx0 = pivot.x - B.e.pos.x, dz0 = pivot.z - B.e.pos.z; if (dx0 * dx0 + dz0 * dz0 > 144 * B.s * B.s) continue;
+      shape(B, 0.45);
+      if (q3(cam.x, cam.y, cam.z) >= 1 || q3(pivot.x, pivot.y, pivot.z) < 1) continue;
+      let lo = 0, hi = 1;
+      for (let i = 0; i < 10; i++) { const m = (lo + hi) / 2; cv.copy(pivot).lerp(cam, m); if (q3(cv.x, cv.y, cv.z) >= 1) lo = m; else hi = m; }
+      cv.copy(cam); cam.copy(pivot).lerp(cv, lo * 0.98); moved = true;
+    }
+    return moved;
+  };
+
+  // fight framing: when a big bear is close and hostile, the camera eases back and up so the whole animal (and its
+  // telegraph) stays in frame instead of one huge face. controls.js reads cr.camFrame (extra arm metres) and cr.camLift.
+  const HOSTILE = new Set(['notice', 'rear', 'charge', 'swipe', 'backoff', 'stalk', 'pace', 'wake']);
+  cr.camFrame = 0; cr.camLift = 0;
+  function updateFraming(dt) {
+    let want = 0; const P = G.controls.pos;
+    if (G.mode === 'playing') for (const B of bodies) {
+      const e = B.e; if (!live(e) || !HOSTILE.has(e.state)) continue;
+      if (e === G.bear && e.state === 'stalk') continue;   // the brown bear circling at night stays a distant threat
+      const d = Math.hypot(e.pos.x - P.x, e.pos.z - P.z), s = B.s, near = 1 - Math.max(0, Math.min(1, (d - 3 * s) / (9 * s)));
+      want = Math.max(want, near * (s - 0.6) * 1.9);   // brown bear ~0.75 m, gray bears ~1.1 m, the Alpha ~2.3 m
+    }
+    cr.camFrame += (want - cr.camFrame) * Math.min(1, dt * (want > cr.camFrame ? 2.2 : 0.8));
+    cr.camLift = cr.camFrame * 0.45;
+  }
+
   cr.getInteraction = () => null;
   cr.threatAt = (p) => Math.max(cr.wolves.threatAt(p), cr.gray.threatAt(p));
 
   cr.update = (dt) => {
     look.rate = 0; K.fade = 0;
-    cr.wolves.update(dt); cr.gray.update(dt); cr.animals.update(dt);
+    cr.wolves.update(dt); cr.gray.update(dt); cr.animals.update(dt); updateFraming(dt);
     // an attacker right on top of the player ghosts the avatar (bear.js applies G._threatFade), so the bite is seen
     (G._threatFade ??= {}).creatures = K.fade;
     // swing the view toward an attacker winding up off-screen (like the bear does), so every hit is seen coming

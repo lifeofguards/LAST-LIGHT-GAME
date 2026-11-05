@@ -117,7 +117,11 @@ export function createBear(G) {
   barBg.scale.set(1.9, 0.2, 1); barFg.scale.set(1.8, 0.12, 1); root.add(barBg); root.add(barFg);
   barBg.visible = barFg.visible = false;
 
-  const HOME = () => { const a = Math.random() * 6.28, r = 55 + Math.random() * 45; return new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r); };
+  // day roam: out in the open land, past the chopping ring and inside the fog edge (L1: 60 m), wherever the fire level puts it
+  const HOME = () => {
+    const R = (G.progression && G.progression.forestR) || 60, a = Math.random() * 6.28, r = Math.max(30, R * 0.55) + Math.random() * Math.max(4, R * 0.4 - 6);
+    return new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r);
+  };
   const b = { type: 'bear', root, pos: HOME(), hp: 100, maxHp: 100, state: 'roam', stateT: 0, target: HOME(), t: 0, walk: 0, speed: 0, heading: 0,
     growlT: 5, stagger: 0, nightDelay: 0, angry: 0, rear: 0, flash: 0, barT: 0, blinkT: 2, noticed: false, hitDone: false };
   const setState = (s) => { if (b.state !== s) { b.state = s; b.stateT = 0; b.hitDone = false; G.events.emit('bearState', { state: s }); } };
@@ -129,7 +133,7 @@ export function createBear(G) {
     if (b.state === 'dead' || !root.visible) return false;
     const dx = b.pos.x - pp.x, dz = b.pos.z - pp.z, l = Math.hypot(dx, dz);
     if (l > 3.4 || (dx * fwd.x + dz * fwd.z) / (l || 1) < 0.25) return false;
-    b.hp -= 25 * (G.progression?.axeDamage || 1); b.stagger = 0.5; // better axes (progression chests) hit harder b.flash = 1; b.barT = 5; G.events.emit('bearHit', { hp: b.hp });
+    b.hp -= 25 * (G.progression?.axeDamage || 1); b.stagger = 0.5; b.flash = 1; b.barT = 5; G.events.emit('bearHit', { hp: b.hp }); // better axes (progression chests) hit harder
     b.pos.x += dx / (l || 1) * 0.6; b.pos.z += dz / (l || 1) * 0.6; // knocked back a step
     G.controls.shake = Math.max(G.controls.shake, 0.2);
     if (b.hp <= 0) { b.hp = 0; setState('dead'); G.events.emit('bearDeath'); }

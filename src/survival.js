@@ -149,12 +149,13 @@ export function createSurvival(G) {
   const tmplLeaf = W.bushes[0]?.leaf, tmplBerry = W.bushes[0]?.berryMeshes?.[0];
   function sproutBush() {
     if (!tmplLeaf || !tmplBerry || W.bushes.length >= BUSH_CAP) return null;
-    const lim = (G.progression?.limitR ?? 60) - 5, cx = G.campfire?.x || 0, cz = G.campfire?.z || 0;
+    const lim = (G.progression?.forestR ?? G.progression?.limitR ?? 60) - 5, cx = G.campfire?.x || 0, cz = G.campfire?.z || 0;
     const caves = G.creatures?.caves?.() || G.progression?.caves || [];
     const minR = BUSH_MIN_R * 0.85, outer = lim > 70 && Math.random() < 0.65;
     for (let tries = 0; tries < 40; tries++) {
       const a = Math.random() * 6.28, r0 = outer ? Math.max(minR, lim - 30) : minR;
       const r = Math.sqrt(r0 * r0 + Math.random() * Math.max(0, lim * lim - r0 * r0)), x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
+      if (G.progression?.inBounds && !G.progression.inBounds(x, z, -4)) continue;   // never out in the fog band
       if (W.trees.some(t => t.alive !== false && Math.hypot(t.x - x, t.z - z) < 2.4)) continue;
       if (W.bushes.some(o => Math.hypot(o.x - x, o.z - z) < 7) || caves.some(c => Math.hypot(c.x - x, c.z - z) < 16)) continue;
       const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = Math.random() * 6.28;
@@ -358,7 +359,11 @@ export function createSurvival(G) {
     scene.add(g); return { g, body, x: 0, z: 0, dir: Math.random() * 6.28, hop: Math.random(), alive: true, idle: 1, flee: 0 };
   }
   function placeRabbit(r) {
-    const a = Math.random() * 6.28, d = 34 + Math.random() * 60; r.x = Math.cos(a) * d; r.z = Math.sin(a) * d;
+    const landR = () => (G.progression?.forestR ?? 60) - 4;   // hop around the open land, never out in the fog band
+    for (let i = 0; i < 20; i++) {
+      const a = Math.random() * 6.28, d = 28 + Math.random() * Math.max(6, landR() - 28); r.x = Math.cos(a) * d; r.z = Math.sin(a) * d;
+      if (!G.progression?.inBounds || G.progression.inBounds(r.x, r.z, -4)) break;
+    }
     r.alive = true; r.g.visible = true; r.g.rotation.set(0, 0, 0); r.g.position.set(r.x, 0, r.z);
   }
   for (let i = 0; i < RABBITS; i++) { const r = makeRabbit(); placeRabbit(r); rabbits.push(r); }
@@ -399,7 +404,7 @@ export function createSurvival(G) {
       if (moving) {
         const sp = r.flee > 0 ? 4 : 1.4; r.hop += dt * (r.flee > 0 ? 9 : 5);
         let nx = r.x + Math.sin(r.dir) * sp * dt, nz = r.z + Math.cos(r.dir) * sp * dt;
-        const rr = Math.hypot(nx, nz); if (rr > 108 || rr < 26) { r.dir += Math.PI; nx = r.x; nz = r.z; }
+        const rr = Math.hypot(nx, nz); if (rr > (G.progression?.forestR ?? 112) - 4 || rr < 26) { r.dir += Math.PI; nx = r.x; nz = r.z; }
         r.x = nx; r.z = nz;
       }
       r.g.position.set(r.x, moving ? Math.abs(Math.sin(r.hop)) * 0.35 : 0, r.z); r.g.rotation.y = r.dir;

@@ -23,7 +23,7 @@ export function createControls(G) {
     c.yaw = Math.atan2(-(x - c.pos.x), -(z - c.pos.z)); c.pitch = -0.08;
     c.facing = c.yaw + Math.PI; player.root.rotation.y = c.facing; camInit = false;
   };
-  c.teleport = (x, z) => { c.pos.set(x, 0, z); c.vel.set(0, 0, 0); G.world.collide(c.pos, 0.45); camInit = false; };
+  c.teleport = (x, z) => { c.pos.set(x, 0, z); c.vel.set(0, 0, 0); G.world.collide(c.pos, 0.45); camInit = false; G.world.chopCamT = 0; }; // (a jump cancels the chop cinematic, which frames the old tree)
 
   // ---- camera collision: analytic sphere-cast against the real tree shapes (trunk cylinder, pine cones, oak blobs) ----
   const MIN_D = 1.7; // spring-arm minimum: the avatar never becomes a ghost box
@@ -149,6 +149,7 @@ export function createControls(G) {
     }
     if (G.progression && G.progression.limitPlayer) G.progression.limitPlayer(c.pos, c.vel, dt); // soft push-back at the fog barrier
     G.world.collide(c.pos, 0.45);
+    if (G.creatures && G.creatures.blockPlayer) G.creatures.blockPlayer(c.pos); // can't walk through a bear
     c.speed = Math.hypot(c.vel.x, c.vel.z);
     if (c.grounded && c.speed > 0.5) { c.stepDist += c.speed * dt; if (c.stepDist > (c.sprinting ? 2.1 : 1.6)) { c.stepDist = 0; G.events.emit('footstep', { sprint: c.sprinting }); } }
 
@@ -192,14 +193,18 @@ export function createControls(G) {
     // mouse yaw is still live, but the arm length is frozen at its pre-chop value unless something truly blocks it.
     { const W = G.world, on = W && W.chopCamT > 0 && W.chopFocus; c.chopK = (c.chopK || 0) + ((on ? 1 : 0) - (c.chopK || 0)) * (1 - Math.exp(-dt * (on ? 5 : 2))); }
     const ck = c.chopK || 0;
-    eul.set(c.pitch - 0.06 * ck, c.yaw, 0); camQ.setFromEuler(eul);
+    // inside a cave: crane up, tilt down and swing wider over the shoulder, so the chamber floor and the chest in front
+    // read past the avatar instead of behind it (eased with progression's cave depth, 0 outside → 1 in the chamber)
+    const kv = G.progression ? Math.max(0, Math.min(1, G.progression.caveDark || 0)) : 0;
+    eul.set(c.pitch - 0.06 * ck - 0.16 * kv - 0.05 * (G.creatures ? G.creatures.camFrame || 0 : 0), c.yaw, 0); camQ.setFromEuler(eul);
     const tgtY = c.pos.y * 0.6 + 1.75; // damp vertical follow so jumps don't yank the view
     if (!camInit) { c.camTarget.set(c.pos.x, tgtY, c.pos.z); c.camDist = c.zoom; offCur.set(0.95, 0.35, c.zoom); camInit = true; c._snap = true; }
     const kf = 1 - Math.exp(-22 * dt), ky = 1 - Math.exp(-9 * dt);
     c.camTarget.x += (c.pos.x - c.camTarget.x) * kf;
     c.camTarget.z += (c.pos.z - c.camTarget.z) * kf;
     c.camTarget.y += (tgtY - c.camTarget.y) * ky;
-    const zoomWant = c.zoom + (c.sprinting && c.speed > 6 ? 0.5 : 0);
+    const cf = G.creatures ? G.creatures.camFrame || 0 : 0; // a big bear up close: ease back so the whole animal is in frame
+    const zoomWant = c.zoom + (c.sprinting && c.speed > 6 ? 0.5 : 0) + cf;
     const shoulder = THREE.MathUtils.clamp((c.zoom - 2.4) / 3, 0.35, 1);
     pivot.copy(c.camTarget);
     gatherNear();
@@ -207,8 +212,8 @@ export function createControls(G) {
     skipCanopy.clear();
     for (const t of near) if (canopyD(t, pivot) < CAM_R + 0.05) skipCanopy.add(t);
     // single right-shoulder spring arm (no rig switching = no sideways pops). Length is the only thing collision changes.
-    const zw = zoomWant;
-    offCur.set(0.95 * shoulder, 0.35, zw);
+    const zw = zoomWant - 0.7 * kv;
+    offCur.set(0.95 * shoulder + 0.14 * kv, 0.35 + 0.85 * kv + (G.creatures ? G.creatures.camLift || 0 : 0), zw);
     const L2 = offCur.length();
     dir.copy(offCur).applyQuaternion(camQ).divideScalar(L2);
     groundOn = false; // ground is handled by lifting the camera, never by collapsing the arm
@@ -231,6 +236,9 @@ export function createControls(G) {
     else c.camDist += Math.min(diff * (1 - Math.exp(-9 * dte)), Math.min(14 * dte, 0.4));
     camOut.copy(pivot).addScaledVector(dir, c.camDist);
     if (camOut.y < 0.55) camOut.y = 0.55; // stay above the grass
+    // never inside a big creature (a bear behind you, the Alpha pressing in): the arm shortens past it, the avatar ghosts
+    let armNow = c.camDist;
+    if (G.creatures && G.creatures.clampCamera && G.creatures.clampCamera(camOut, pivot)) armNow = Math.min(armNow, camOut.distanceTo(pivot));
     camera.position.copy(camOut);
     camera.quaternion.copy(camQ);
     // when slid wide around a trunk, turn the view back toward the avatar so it stays in frame
@@ -241,7 +249,7 @@ export function createControls(G) {
     }
     // fade the avatar only once the camera really is right on top of it (never drop it)
     player.root.visible = true;
-    player.setFade((c.camDist - 0.55) / 0.6);
+    player.setFade((armNow - 0.55) / 0.6);
     const fovWant = BASE_FOV + (c.sprinting && c.speed > 6 ? 7 : 0);
     if (Math.abs(camera.fov - fovWant) > 0.01) { camera.fov += (fovWant - camera.fov) * (1 - Math.exp(-6 * dt)); camera.updateProjectionMatrix(); }
     // impact feedback: a tiny rotational jolt (<0.4 deg) instead of moving the rig, so the view stays put on every chop

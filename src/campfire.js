@@ -237,7 +237,8 @@ export function createCampfire(G) {
       if (fire.fuel >= fire.maxFuel - 1) return lv && !lv.max ? { dist: d, label: `[E] Add log to fire (full)${xp}`, action: fire.feed } : { dist: d, label: 'The fire is roaring — full!', disabled: true, action: () => {} };
       return { dist: d, label: `[E] ${fire.fuel <= 0 ? 'Relight the fire' : 'Add log to fire'} (${Math.round(fire.fuel)}%)${xp}`, action: fire.feed };
     }
-    return { dist: d + 1, label: fire.fuel <= 0 ? 'The fire is out! Bring logs to relight it' : 'Fire needs logs — chop trees with the axe', disabled: true, action: () => {} };
+    const lv = G.progression && G.progression.levelInfo ? G.progression.levelInfo() : null;
+    return { dist: d + 1, label: fire.fuel <= 0 ? 'The fire is out! Bring logs to relight it' : fire.fuel < 60 || !lv || lv.max ? 'Fire needs logs — chop trees with the axe' : `Fire Lv ${lv.level} · ${lv.left} more log${lv.left === 1 ? '' : 's'} to Lv ${lv.level + 1}`, disabled: true, action: () => {} };
   };
 
   // level 1-4: show the pit tier, and on a real level-up flare hard, burst embers and roll a shockwave outward

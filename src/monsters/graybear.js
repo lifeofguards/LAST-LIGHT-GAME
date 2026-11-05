@@ -77,9 +77,8 @@ export function createGrayBears(G, cr, K) {
     G.survival?.spawnMeat?.(b.pos.x, b.pos.z, 2);
     if (!group.cleared && bears.every(o => o.state === 'dead')) {
       group.cleared = true; group.alerted = false;
-      K.emit('guardiansCleared', { caveId: 'bear', x: b.pos.x, z: b.pos.z });
-      K.toast('The last gray bear falls.', 2.5);
-    } else K.toast('A gray bear falls.', 2);
+      K.emit('guardiansCleared', { caveId: 'bear', x: b.pos.x, z: b.pos.z });   // progression drops the key and says so
+    } else { const left = bears.filter(o => o.state !== 'dead').length; K.toast(`A gray bear falls. ${left} left.`, 2); }
   }
 
   function updateGray(b, dt, P, night, safe, active) {
@@ -147,7 +146,7 @@ export function createGrayBears(G, cr, K) {
     if (hl > LEASH + 6) { b.pos.x = group.home.x + hx / hl * (LEASH + 6); b.pos.z = group.home.z + hz / hl * (LEASH + 6); }
     K.fireAvoid(b.pos, 2);
     G.world.collide(b.pos, 1.0);
-    if (active && !group.forced) { const lr = K.limitR() - 2, r = Math.hypot(b.pos.x, b.pos.z); if (r > lr) { b.pos.x *= lr / r; b.pos.z *= lr / r; } }
+    if (active && !group.forced) { const lr = K.landR() - 2, r = Math.hypot(b.pos.x, b.pos.z); if (r > lr) { b.pos.x *= lr / r; b.pos.z *= lr / r; } }
   }
 
   // ---------------- the gray Alpha ----------------
@@ -170,7 +169,7 @@ export function createGrayBears(G, cr, K) {
       alpha.hp = 0; setState(alpha, 'dead'); alpha.deadT = 0;
       K.emit('alphaDead', { x: alpha.pos.x, z: alpha.pos.z });
       G.survival?.spawnMeat?.(alpha.pos.x, alpha.pos.z, 4);
-      K.toast('The Gray Alpha falls. The mountain is yours to find.', 3.5);
+      K.toast('The Gray Alpha falls! It dropped the Mountain Key.', 3.5);
       return;
     }
     if (!alpha.enraged && alpha.hp <= alpha.maxHp * 0.5) { alpha.enraged = true; setState(alpha, 'rear'); return; }

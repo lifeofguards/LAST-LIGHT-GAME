@@ -8,11 +8,12 @@
 import * as THREE from '../../vendor/three.module.js';
 import { makeEyePair, nightFog } from './bear.js';
 
-const PALS = [
-  { fur: '#86817a', back: '#5a5550', pale: '#d2c9bb' },
-  { fur: '#77716b', back: '#4b4743', pale: '#c0b7a9' },
-  { fur: '#8f8577', back: '#625a50', pale: '#d8cebd' },
+const PALS = [   // gray wolves, with a darker saddle and a paler mask than before so they separate from rock and bark by day
+  { fur: '#8a8279', back: '#4e4842', pale: '#ddd3c3' },
+  { fur: '#7b7369', back: '#423d38', pale: '#cfc5b4' },
+  { fur: '#93897a', back: '#574f45', pale: '#e2d7c4' },
 ];
+const DAY_LINE = new THREE.Color('#1c1712');
 const EYE_CALM = new THREE.Color('#ffcf48'), EYE_RAGE = new THREE.Color('#ff5a1a'), RIM_CALM = new THREE.Color('#a9bedf'), RIM_RAGE = new THREE.Color('#ffc890');
 const HP = 50, NOTICE_DAY = 18, NOTICE_NIGHT = 22, LEASH = 40, CULL = 120;
 const WINDUP = 0.68, LUNGE_SPEED = 12.5, BITE_R = 1.35;
@@ -129,9 +130,8 @@ export function createWolves(G, cr, K) {
     if (!pack.alerted && !quiet) alertPack(pack, w);
     if (!pack.cleared && pack.wolves.every(o => o.state === 'dead')) {
       pack.cleared = true; pack.alerted = false;
-      K.emit('guardiansCleared', { caveId: pack.id, x: w.pos.x, z: w.pos.z });
-      K.toast('The last wolf falls. The pack is broken.', 2.5);
-    }
+      K.emit('guardiansCleared', { caveId: pack.id, x: w.pos.x, z: w.pos.z });   // progression drops the key and says so
+    } else if (!quiet) { const left = pack.wolves.filter(o => o.state !== 'dead').length; K.toast(left === 1 ? 'A wolf falls. One left: it carries the key.' : `A wolf falls. ${left} left in the pack.`, 2); }
   }
 
   function updateWolf(w, pack, dt, P, night, safe, active) {
@@ -207,7 +207,7 @@ export function createWolves(G, cr, K) {
     if (hl > LEASH + 6) { w.pos.x = pack.home.x + hx / hl * (LEASH + 6); w.pos.z = pack.home.z + hz / hl * (LEASH + 6); }
     K.fireAvoid(w.pos, 2);
     G.world.collide(w.pos, 0.45);
-    if (active && !pack.forced) { const lr = K.limitR() - 1.5, r = Math.hypot(w.pos.x, w.pos.z); if (r > lr) { w.pos.x *= lr / r; w.pos.z *= lr / r; } }
+    if (active && !pack.forced) { const lr = K.landR() - 1.5, r = Math.hypot(w.pos.x, w.pos.z); if (r > lr) { w.pos.x *= lr / r; w.pos.z *= lr / r; } }
   }
 
   function poseWolf(w, dt, dk) {
@@ -253,9 +253,12 @@ export function createWolves(G, cr, K) {
     const focus = alert ? 1 : lying ? 0.0 : 0.55;
     K.eyes(w.eyePair, w.dist, Math.min(1, dk * 1.5) * focus, rage ? EYE_RAGE : EYE_CALM, w.blinkT < 0 && !rage ? 0.12 : 1, rage ? 1.5 : 1.2);
     // moonlit rim on the silhouette; hot on the telegraph
-    const rimA = Math.min(1, dk * 1.3) * (0.2 * (alert ? 1 : 0.6) + w.crouch * 0.6);
+    const nightA = Math.min(1, dk * 1.3) * (0.2 * (alert ? 1 : 0.6) + w.crouch * 0.6);
+    // by day the same shell is a soft dark contour, so a gray wolf still reads against gray rock and bark
+    const dayA = (1 - Math.min(1, dk * 1.6)) * (alert ? 0.5 + w.crouch * 0.3 : 0.3) * (w.dist < 60 ? 1 : 0);
+    const rimA = Math.max(nightA, dayA);
     w.rimMat.opacity = rimA; w.rimMat.visible = rimA > 0.01;
-    if (w.rimMat.visible) { w.rimMat.userData.setDist(w.dist); w.rimMat.color.copy(RIM_CALM).lerp(RIM_RAGE, w.crouch); }
+    if (w.rimMat.visible) { w.rimMat.userData.setDist(w.dist); if (nightA >= dayA) w.rimMat.color.copy(RIM_CALM).lerp(RIM_RAGE, w.crouch); else w.rimMat.color.copy(DAY_LINE).lerp(RIM_RAGE, w.crouch * 0.35); }
     nightFog(w.allMats, dk);
     const fill = dk * (0.014 + w.crouch * 0.02);
     for (const m of w.furMats) m.emissive.setRGB(w.flash * 0.55 + fill * 0.8, w.flash * 0.055 + fill * 0.85, w.flash * 0.044 + fill * 1.15);

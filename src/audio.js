@@ -310,6 +310,26 @@ export function createAudio(G) {
     for (const [dt, f, dur] of [[1.0, 220, 0.24], [1.2, 293.7, 0.24], [1.4, 370, 0.24], [1.6, 440, 0.95], [2.6, 392, 0.3], [2.9, 440, 0.3]]) horn(t + dt, f, dur, 0.05, 0.1);
     for (const f of [293.7, 370, 440, 587.3]) horn(t + 3.2, f, 3, 0.035, (f - 440) / 600); tone({ t: t + 3.2, f0: 73.4, f1: 60, dur: 1.2, gain: 0.35 });
     noiseBurst({ t: t + 3.2, dur: 3, type: 'highpass', freq: 6000, gain: 0.05, attack: 0.02 }); stinger([146.8, 220], 5, 0.03, 'triangle', 2000); });
+  // a key falls from the last guardian: a shimmering fall that lands with a bright tink (it is worth walking over to)
+  on('keyDrop', (d) => { const s = where(d, 60), t = now(), g = 0.4 + 0.6 * s.vol;
+    for (let i = 0; i < 7; i++) bell(t + i * 0.06, 2637 - i * 190, 0.012 * g, 0.9, clamp(s.pan + (Math.random() - .5) * 0.3, -1, 1));
+    noiseBurst({ t, dur: 0.9, type: 'highpass', freq: 6500, gain: 0.025 * g, attack: 0.15, pan: s.pan });
+    bell(t + 0.52, 1975.5, 0.04 * g, 1.6, s.pan); tone({ t: t + 0.52, f0: 140, f1: 90, dur: 0.12, gain: 0.08 * g, type: 'triangle', pan: s.pan }); });
+  // the chest: a creaky lid, then coins and a warm little major swell
+  on('chestOpen', (d) => { const s = where(d, 30), t = now();
+    const cr = tone({ t, type: 'sawtooth', f0: 150, f1: 210, dur: 0.55, gain: 0.03, filter: 1100, q: 6, attack: 0.08, pan: s.pan }); const jit = ctx.createOscillator(); jit.type = 'square'; jit.frequency.value = 31; const jg = ctx.createGain(); jg.gain.value = 260; jit.connect(jg).connect(cr.detune); jit.start(t); jit.stop(t + 0.6);
+    tone({ t: t + 0.55, f0: 110, f1: 60, dur: 0.18, gain: 0.2, type: 'triangle', pan: s.pan }); noiseBurst({ t: t + 0.55, dur: 0.12, freq: 600, gain: 0.12, buf: brown, pan: s.pan });
+    for (let i = 0; i < 10; i++) { const tt = t + 0.65 + Math.random() * 0.5; tone({ t: tt, f0: 3000 + Math.random() * 2500, dur: 0.05, gain: 0.012, pan: clamp(s.pan + (Math.random() - .5) * 0.4, -1, 1) }); }
+    for (const [dt, f] of [[0.7, 523.3], [0.8, 659.3], [0.9, 784], [1.05, 1046.5]]) bell(t + dt, f, 0.022, 1.8, s.pan); });
+  // gray bears and the Alpha going down; the Alpha sleeping
+  on('grayBearDie', (d) => { const s = where(d, 50), t = now(); tone({ t, type: 'sawtooth', f0: 120, f1: 38, dur: 1.6, gain: 0.12 + 0.08 * s.vol, filter: 600, attack: 0.05, pan: s.pan }); tone({ t: t + 1.0, f0: 55, f1: 28, dur: 0.6, gain: 0.3 * s.vol + 0.05, pan: s.pan }); noiseBurst({ t: t + 1.0, dur: 0.5, freq: 300, gain: 0.2 * s.vol, buf: brown, pan: s.pan }); });
+  on('alphaDead', (d) => { const s = where(d, 60), t = now(); bigRoar(s, [46, 61, 82], 2.4, 0.06 + 0.06 * s.vol, 30);
+    tone({ t: t + 2.0, f0: 48, f1: 24, dur: 0.9, gain: 0.45, pan: s.pan }); noiseBurst({ t: t + 2.0, dur: 0.9, freq: 260, gain: 0.3, buf: brown, pan: s.pan }); G.controls.shake = Math.max(G.controls.shake || 0, 0.2);
+    for (const [dt, f] of [[3.0, 293.7], [3.0, 370], [3.0, 440]]) horn(t + dt, f, 2.4, 0.026, (f - 370) / 600); });
+  on('alphaSnore', (d) => { const s = where(d, 30); if (s.vol <= 0.02) return; const t = now(); noiseBurst({ t, dur: 1.4, type: 'lowpass', freq: 260, gain: 0.1 * s.vol, attack: 0.6, buf: brown, pan: s.pan }); tone({ t, type: 'sawtooth', f0: 52, f1: 47, dur: 1.3, gain: 0.03 * s.vol, filter: 240, attack: 0.5, pan: s.pan }); });
+  // a dodged bite or swipe: a snap / whoosh on empty air, so a good sidestep feels like one
+  on('wolfMiss', (d) => { const s = where(d, 30); noiseBurst({ dur: 0.16, type: 'bandpass', freq: 900, sweepTo: 2200, q: 1.4, gain: 0.06 + 0.06 * s.vol, attack: 0.02, pan: s.pan }); tone({ t: now() + 0.05, f0: 1500, f1: 900, dur: 0.04, gain: 0.04 * s.vol, type: 'square', filter: 2500, pan: s.pan }); });
+  on('bearMiss', () => noiseBurst({ dur: 0.3, type: 'bandpass', freq: 500, sweepTo: 1600, q: 1, gain: 0.09, attack: 0.04 }));
   on('animalFlee', (d) => { const type = String((d && d.type) || '').toLowerCase(), s = where(d, 45), t = now(); if (s.vol <= 0.01) return;
     if (/bird|owl|crow|raven/.test(type)) { const owlT = type.includes('owl'), n = owlT ? 6 : 9 + (Math.random() * 5 | 0); let tt = t, g = (owlT ? 0.05 : 0.07) * (0.3 + 0.7 * s.vol);
       for (let i = 0; i < n; i++) { noiseBurst({ t: tt, dur: owlT ? 0.09 : 0.045, type: 'bandpass', freq: (owlT ? 450 : 850) + Math.random() * 500, q: 0.9, gain: g, attack: 0.008, pan: clamp(s.pan + (Math.random() - .5) * 0.2, -1, 1), buf: owlT ? brown : null }); tt += (owlT ? 0.16 : 0.07) + Math.random() * 0.03; g *= 0.86; } // wingbeats climbing away
@@ -398,8 +418,8 @@ export function createAudio(G) {
     const D = A.dread;
     const scored = !!(G.music && G.music.active); // music.js owns the harmony: the A-major pad would clash with its keys
     dayPadGain.gain.setTargetAtTime(scored ? 0 : playing ? (1 - dark) * 0.006 * duck : 0.004, t, 1.5);
-    droneGain.gain.setTargetAtTime((dark * (0.018 + D * 0.06) + (playing && fire.fuel <= 0 && dark > 0.5 ? 0.03 : 0)) * (scored ? 0.55 : 1), t, 0.8);
-    droneFilter.frequency.setTargetAtTime(140 + 120 * (0.5 + 0.5 * Math.sin(t * 0.09)) + D * 520, t, 0.6);
+    droneGain.gain.setTargetAtTime((dark * (0.018 + D * 0.06) + (playing && fire.fuel <= 0 && dark > 0.5 ? 0.03 : 0)) * (scored ? 0.22 : 1), t, 0.8); // music.js's thriller carries its own E drone: keep this one as a faint floor so the two never mud up
+    droneFilter.frequency.setTargetAtTime(scored ? 120 + D * 160 : 140 + 120 * (0.5 + 0.5 * Math.sin(t * 0.09)) + D * 520, t, 0.6);
     const tPulse = 0.8 + 0.2 * Math.sin(t * Math.PI * 2 * (0.5 + D * 1.5)); A.tensionTarget = playing && D > 0.08 ? (0.05 + Math.pow(D, 0.9) * 0.17) * tPulse : 0;
     tensionGain.gain.setTargetAtTime(A.tensionTarget, t, 0.25); tensionFilter.frequency.setTargetAtTime(600 + D * 1400, t, 0.8); tensionFilter.Q.value = 0.5;
     for (const { o, f } of tensionOsc) o.frequency.setTargetAtTime(f * (1 + D * 0.09), t, 1.2);

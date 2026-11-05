@@ -66,9 +66,16 @@ export function createUI(G) {
   const slots = [...root.querySelectorAll('.slot')];
 
   let dmgT = 0, dmgSum = 0, toastQ = null;
+  const cardQ = [], CARD_HOLD = 2.6;
   let prevFuel = -1, cardStart = -1e9, cardFade = 0, meterA = 0, chopTree = null, treeHpT = 0, hitT = 0, cardT = 0, toastT = 0, itemT = 0, hurt = 0;
   const ui = {
-    showCard(h, p, cls = '') { toastQ = null; toastT = 0; el.toast.style.opacity = 0; el.toast.textContent = ''; dmgT = 0; $('dmgnum').classList.remove('go'); document.body.classList.add('cardup'); $('cardh').textContent = h; $('cardp').textContent = p || ''; el.card.className = cls; el.card.style.transition = 'none'; el.card.style.opacity = ''; void el.card.offsetWidth; el.card.classList.add('go'); cardStart = performance.now(); cardT = 1; cardFade = 1; },
+    // cards never cut each other off: one that arrives while another is still centred (a level-up at dusk, a region
+    // opening at dawn) waits its turn and plays as soon as the first one docks
+    showCard(h, p, cls = '') {
+      if (el.card.classList.contains('go') && (performance.now() - cardStart) / 1000 < CARD_HOLD) { if (!cardQ.some(c => c[0] === h)) cardQ.push([h, p, cls]); return; }
+      ui._card(h, p, cls);
+    },
+    _card(h, p, cls = '') { toastQ = null; toastT = 0; el.toast.style.opacity = 0; el.toast.textContent = ''; dmgT = 0; $('dmgnum').classList.remove('go'); document.body.classList.add('cardup'); $('cardh').textContent = h; $('cardp').textContent = p || ''; el.card.className = cls; el.card.style.transition = 'none'; el.card.style.opacity = ''; void el.card.offsetWidth; el.card.classList.add('go'); cardStart = performance.now(); cardT = 1; cardFade = 1; },
     toast(msg, secs = 2.5) { if (cardT > 0 || document.body.classList.contains('cardup')) { toastQ = [msg, secs]; return; } el.toast.textContent = msg; el.toast.style.opacity = 1; toastT = secs; },
     startPlaying() { el.title.classList.add('hidden'); el.hud.classList.remove('hidden'); },
     showDeath(nights, cause) {
@@ -79,6 +86,9 @@ export function createUI(G) {
       let best = 0; try { best = +localStorage.getItem('lastlight.best') || 0; if (nights > best) localStorage.setItem('lastlight.best', String(nights)); } catch (e) {}
       $('deathbest').textContent = nights > best ? (best > 0 ? `New record! Your old best was ${best}.` : '') : `Your best: ${best} ${best === 1 ? 'night' : 'nights'}.`;
       $('deathtip').textContent = /deer/.test(c) ? 'Tip: the Deer freezes when your flashlight is on it. Never let the fire die at night.'
+        : /alpha/.test(c) ? 'Tip: the Alpha rears up before it charges. Sidestep the charge, hit it from the side, and eat before you go in.'
+        : /gray bear/.test(c) ? 'Tip: one gray bear charges at a time. Sidestep after it roars, then swing. A better axe from the wolf caves helps.'
+        : /wol/.test(c) ? 'Tip: a wolf crouches with flaring eyes before it lunges. Sidestep, then swing. The fire\'s light keeps the pack off.'
         : /bear/.test(c) ? 'Tip: hit the bear with the axe, or run into the fire\'s light. It won\'t follow you there.'
         : /hunger|starv/.test(c) ? 'Tip: berry bushes near camp refill hunger (E on a bush). Hit rabbits with the axe and cook the meat by the fire for a big meal.'
         : 'Tip: keep the fire fed and stay inside its light after dark.';
@@ -135,7 +145,10 @@ export function createUI(G) {
     document.body.classList.toggle('lowhp', low > 0);
     // phase card runs on a fixed WALL-CLOCK timer (CSS keyframes), independent of frame rate, damage or game dt:
     // 0.4s fade in, ~1.6s hold centred, then it shrinks up and docks under the clock, then fades. Centre is free after ~2.2s.
-    if (el.card.classList.contains('go')) { const age = (performance.now() - cardStart) / 1000; cardT = age < 2.1 ? 1 : 0; if (age > 5) { el.card.classList.remove('go'); cardT = 0; } } else cardT = 0;
+    if (cardQ.length && (!el.card.classList.contains('go') || (performance.now() - cardStart) / 1000 >= CARD_HOLD)) { const [h, p, c] = cardQ.shift(); ui._card(h, p, c); }
+    let dock = false;
+    if (el.card.classList.contains('go')) { const age = (performance.now() - cardStart) / 1000; cardT = age < 2.1 ? 1 : 0; dock = age >= 2.1 && age < 4.9; if (age > 5) { el.card.classList.remove('go'); cardT = 0; } } else cardT = 0;
+    document.body.classList.toggle('carddock', dock); // the shrunken card sits under the clock: toasts drop below it
     if (toastT > 0) { toastT -= dt; if (toastT <= 0) el.toast.style.opacity = 0; }
     if (itemT > 0) { itemT -= dt; if (itemT <= 0) el.itemname.style.opacity = 0; }
     if (treeHpT > 0) { treeHpT -= dt; if (treeHpT <= 0) $('treehp').style.opacity = 0; }
@@ -187,7 +200,7 @@ export function createUI(G) {
       else setGoal(`Survive night ${dn.night}`, `Stay in the light · dawn in ${Math.ceil(dn.timeLeft())}s`);
     } else {
       if (inv.logs >= G.world.logMax) setGoal('Sack full: bring logs to the fire', fireD > 6 ? `Campfire ${Math.round(fireD)}m away` : '[E] at the campfire to add a log');
-      else if (inv.logs > 0 && (fuel < 60 || fireD < 10)) setGoal('Add logs to the campfire', `[E] at the fire · ${inv.logs}/${G.world.logMax} in sack`);
+      else if (inv.logs > 0 && (fuel < 60 || (fireD < 10 && (fuel < G.campfire.maxFuel - 1 || !(G.progression?.levelInfo?.().max))))) setGoal('Add logs to the campfire', `[E] at the fire · ${inv.logs}/${G.world.logMax} in sack`);
       else if (!stepsDone.chop) setGoal('Chop a tree for logs', 'Walk up to a tree · click or [E] to swing the axe');
       else if (!stepsDone.feed) setGoal('Pick up logs and feed the fire', '[E] to pick up · [E] at the fire');
       else if (st.hunger < 40) setGoal('Eat something', 'Red berry bushes grow out in the forest · [E] to pick');

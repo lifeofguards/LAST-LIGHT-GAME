@@ -224,3 +224,5 @@ body.cardup #treehp, body.cardup #itemname { opacity: 0 !important; }
 #keys .kslot.pop { animation: goalpop .5s ease-out; border-color: #ffe9a8; }
 #card.open h1 { color: #ffcf7a; text-shadow: 0 0 30px rgba(255,140,40,.55), 0 6px 30px rgba(0,0,0,.9); }
 #card.open p { color: #fff1d6; font-weight: 700; font-size: 22px; letter-spacing: 1px; text-shadow: 0 2px 3px #000, 0 0 14px rgba(0,0,0,.95), 0 0 30px rgba(0,0,0,.6); }
+
+body.carddock #toast { top: 176px; transition: opacity .4s, top .3s; }

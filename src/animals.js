@@ -102,7 +102,7 @@ export function createAnimals(G, cr, K) {
       const m = mountain();
       if (!m) { a.alive = false; a.hidden = true; a.root.visible = false; return; }
       if (m.ring) K.findSpot(m.minR, m.maxR, tmp, 1.6, 0, 0, P, 30); else K.findSpot(2, m.r * 0.85, tmp, 1.2, m.x, m.z, P, 20);
-    } else K.findSpot(a.type === 'stag' ? 30 : 24, Math.max(34, K.limitR() - 4), tmp, a.type === 'stag' ? 2 : 1.4, 0, 0, P, 35);
+    } else K.findSpot(a.type === 'stag' ? 30 : 24, Math.max(34, K.landR() - 4), tmp, a.type === 'stag' ? 2 : 1.4, 0, 0, P, 35);
     a.pos.set(tmp.x, 0, tmp.z); a.home.x = tmp.x; a.home.z = tmp.z;
     a.alive = true; a.hidden = false; a.hp = a.spec.hp; a.state = 'idle'; a.stateT = 0; a.idleFor = 2 + Math.random() * 5;
     a.body.rotation.set(0, 0, 0); a.root.position.y = 0;
@@ -221,7 +221,7 @@ export function createAnimals(G, cr, K) {
   }
   function landFlock(f, far = true) {
     const P = G.controls.pos;
-    K.findSpot(22, Math.max(32, K.limitR() - 4), tmp, 2.0, 0, 0, far ? P : null, far ? 40 : 0);
+    K.findSpot(22, Math.max(32, K.landR() - 4), tmp, 2.0, 0, 0, far ? P : null, far ? 40 : 0);
     f.x = tmp.x; f.z = tmp.z; f.state = 'ground'; f.t = 0;
     for (const b of f.birds) { b.x = f.x + (Math.random() - 0.5) * 3; b.z = f.z + (Math.random() - 0.5) * 3; b.y = 0; b.root.visible = true; b.root.rotation.set(0, b.h, 0); }
   }
@@ -289,7 +289,7 @@ export function createAnimals(G, cr, K) {
     return { type: 'owl', snag, root, body, head, wings, eyes, plumage, x: 0, z: 0, perch: new THREE.Vector3(), pos: new THREE.Vector3(), state: 'perch', t: 0, hootT: 6 + Math.random() * 14, vx: 0, vy: 0, vz: 0, h: 0, back: 0, dist: 999, fogMats: [om, snagMat] };
   }
   function placeOwl(o) {
-    K.findSpot(24, Math.max(34, K.limitR() - 6), tmp, 2.2, 0, 0, G.controls.pos, 30);
+    K.findSpot(24, Math.max(34, K.landR() - 6), tmp, 2.2, 0, 0, G.controls.pos, 30);
     o.x = tmp.x; o.z = tmp.z; o.snag.position.set(o.x, 0, o.z); o.snag.rotation.y = Math.random() * 6.28;
     if (o.collider) G.world.removeCollider(o.collider);
     o.collider = G.world.addCollider({ x: o.x, z: o.z, r: 0.3 });
@@ -334,7 +334,7 @@ export function createAnimals(G, cr, K) {
     animals, flocks, owls,
     update(dt) {
       if (G.mode === 'title') return;
-      const P = G.controls.pos, sprint = G.controls.sprinting, dk = K.dark(), lr = K.limitR();
+      const P = G.controls.pos, sprint = G.controls.sprinting, dk = K.dark(), lr = K.landR();
       for (const a of animals) {
         if (a.hidden) continue;
         a.dist = Math.hypot(P.x - a.pos.x, P.z - a.pos.z);
