@@ -201,3 +201,5 @@ body.cardup #treehp, body.cardup #itemname { opacity: 0 !important; }
   83%   { opacity: .92; transform: translateY(calc(-32vh + 122px)) scale(.36); animation-timing-function: ease-in; }
   100%  { opacity: 0; transform: translateY(calc(-32vh + 122px)) scale(.36); }
 }
+
+#death p.best { font-size: 17px; margin: -18px 0 22px; color: #ffc46b; }

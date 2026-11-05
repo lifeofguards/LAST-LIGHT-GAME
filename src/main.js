@@ -57,7 +57,7 @@ G.startGame = () => {
   G.ui.showCard('DAY 1', 'Gather logs. Keep the fire alive.', 'day');
   G.events.emit('gameStart');
 };
-events.on('nightStart', (n) => G.ui.showCard(`NIGHT ${n}`, n === 5 ? 'The last night. Hold on.' : 'Stay in the light.', 'night'));
+events.on('nightStart', (n) => G.ui.showCard(`NIGHT ${n}`, n % 10 === 0 ? `${n} nights. The forest is getting hungrier.` : 'Stay in the light.', 'night'));
 events.on('dayStart', (n) => G.ui.showCard(`DAY ${n}`, `You survived night ${n - 1}.`, 'day'));
 events.on('death', ({ cause }) => {
   if (G.mode !== 'playing') return;

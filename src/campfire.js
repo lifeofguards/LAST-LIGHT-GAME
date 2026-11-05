@@ -220,7 +220,7 @@ export function createCampfire(G) {
   fire.update = (dt) => {
     t += dt;
     const night = G.daynight.phase === 'night', dark = G.daynight.darkness || 0;
-    if (G.mode === 'playing') fire.fuel = Math.max(0, fire.fuel - dt * (night ? 0.8 + 0.07 * Math.max(0, (G.daynight.night || 1) - 1) : 0.45)); // integration: gentler first night, ramps to ~1.08/s by night 5
+    if (G.mode === 'playing') fire.fuel = Math.max(0, fire.fuel - dt * (night ? Math.min(1.4, 0.8 + 0.07 * Math.max(0, (G.daynight.night || 1) - 1)) : 0.45)); // integration: gentler first night, ramps to ~1.08/s by night 5
     const out = fire.fuel <= 0;
     if (out !== wasOut) { wasOut = out; G.events.emit(out ? 'fireOut' : 'fireLit'); if (out) snuff = 1; }
     fire.flare = Math.max(0, fire.flare - dt * 1.1);

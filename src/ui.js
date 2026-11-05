@@ -40,7 +40,7 @@ export function createUI(G) {
   </div>
   <div id="title" class="screen">
     <h1>LAST LIGHT</h1>
-    <div class="tag">Keep the fire burning. Survive 5 nights in the forest.</div>
+    <div class="tag">Keep the fire burning. How many nights can you survive?</div>
     <div class="steps">
       <div class="step"><div class="sn">1</div>${ICON.axe}<b>Chop trees</b><span>Walk up to a tree and press E (or click). Trees drop logs.</span></div>
       <div class="step"><div class="sn">2</div>${ICON.fire}<b>Feed the fire</b><span>Press E at the campfire to add logs.</span></div>
@@ -55,7 +55,7 @@ export function createUI(G) {
       <span><b>Q</b> eat berries</span><span><b>M</b> mute</span>
     </div>
   </div>
-  <div id="death" class="screen hidden"><h1>YOU DIED</h1><div class="big"><span id="deathn">0</span><small>nights survived</small></div><p id="deathmsg"></p><div id="deathtip" class="tip"></div><button class="btn" id="retry">TRY AGAIN</button><div class="hint">or press <b>R</b></div></div>
+  <div id="death" class="screen hidden"><h1>YOU DIED</h1><div class="big"><span id="deathn">0</span><small>nights survived</small></div><p id="deathmsg"></p><p id="deathbest" class="best"></p><div id="deathtip" class="tip"></div><button class="btn" id="retry">TRY AGAIN</button><div class="hint">or press <b>R</b></div></div>
   <div id="win" class="screen hidden"><h1>YOU SURVIVED</h1><div class="big"><span>5</span><small>nights survived</small></div><p id="winmsg">The sun rises and the forest goes quiet. The fire kept you alive.</p><button class="btn" id="again">PLAY AGAIN</button><div class="hint">or press <b>R</b></div></div>`;
   const $ = (id) => document.getElementById(id);
   const el = { hud: $('hud'), title: $('title'), death: $('death'), win: $('win'), hurt: $('hurt'), prompt: $('prompt'), card: $('card'), toast: $('toast'), itemname: $('itemname') };
@@ -76,6 +76,8 @@ export function createUI(G) {
       const c = String(cause || '').toLowerCase();
       $('deathmsg').textContent = (!cause || c === 'debug' ? 'The forest took you.' : /starv|hunger/.test(c) ? 'You starved.' : `Killed by ${/^(the |a )/i.test(cause) ? cause : 'the ' + cause}.`);
       $('death').querySelector('.big small').textContent = nights === 1 ? 'night survived' : 'nights survived';
+      let best = 0; try { best = +localStorage.getItem('lastlight.best') || 0; if (nights > best) localStorage.setItem('lastlight.best', String(nights)); } catch (e) {}
+      $('deathbest').textContent = nights > best ? (best > 0 ? `New record! Your old best was ${best}.` : '') : `Your best: ${best} ${best === 1 ? 'night' : 'nights'}.`;
       $('deathtip').textContent = /deer/.test(c) ? 'Tip: the Deer freezes when your flashlight is on it. Never let the fire die at night.'
         : /bear/.test(c) ? 'Tip: hit the bear with the axe, or run into the fire\'s light. It won\'t follow you there.'
         : /hunger|starv/.test(c) ? 'Tip: berry bushes near camp refill hunger (E on a bush). Hit rabbits with the axe and cook the meat by the fire for a big meal.'

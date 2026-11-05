@@ -2,7 +2,7 @@
 // Four readable phases (dawn / day / golden dusk / night) driven by keyframed palettes.
 import * as THREE from '../vendor/three.module.js';
 
-export const DAY_LEN = 90, NIGHT_LEN = 75, CYCLE = DAY_LEN + NIGHT_LEN, DAY_FRAC = DAY_LEN / CYCLE, NIGHTS_TO_WIN = 5;
+export const DAY_LEN = 150, NIGHT_LEN = 55, CYCLE = DAY_LEN + NIGHT_LEN, DAY_FRAC = DAY_LEN / CYCLE; // endless: no final night
 
 // Keyframes across the whole cycle. `at` is in cycle position: day u (0..1) maps to [0, DAY_FRAC], night v maps to [DAY_FRAC, 1].
 // zen = sky zenith, hor = horizon (also fog colour, so the tree line melts into the sky), glow = sun/moon halo colour.
@@ -137,7 +137,7 @@ export function createDayNight(G) {
     if (phase !== dn.phase) {
       dn.phase = phase;
       if (phase === 'night') { dn.night++; G.events.emit('nightStart', dn.night); }
-      else { warned = false; if (dn.night >= NIGHTS_TO_WIN) G.events.emit('win', dn.night); else { dn.day = dn.night + 1; G.events.emit('dayStart', dn.day); } }
+      else { warned = false; dn.day = dn.night + 1; G.events.emit('dayStart', dn.day); }
     }
     // dusk warning ~20s before nightfall
     const left = dn.timeLeft();
