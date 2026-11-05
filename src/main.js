@@ -13,6 +13,9 @@ import { createSurvival } from './survival.js';
 import { createAudio } from './audio.js';
 import { createUI } from './ui.js';
 import { installDebug } from './debug.js';
+import { createProgression } from './progression.js';
+import { createCreatures } from './creatures.js';
+import { createMusic } from './music.js';
 
 // tiny event bus shared by all modules
 const listeners = {};
@@ -42,10 +45,13 @@ G.controls = createControls(G);
 G.survival = createSurvival(G);
 G.daynight = createDayNight(G);
 G.campfire = createCampfire(G);
+G.progression = createProgression(G);
 G.flashlight = createFlashlight(G);
 G.deer = createDeer(G);
 G.bear = createBear(G);
+G.creatures = createCreatures(G);
 G.audio = createAudio(G);
+G.music = createMusic(G);
 G.ui = createUI(G);
 
 G.startGame = () => {
@@ -71,7 +77,7 @@ function updateInteraction() {
   G.interaction = null;
   if (G.mode !== 'playing') return;
   const p = G.controls.pos;
-  const cands = [G.campfire.getInteraction(p), G.world.getInteraction(p)].filter(Boolean);
+  const cands = [G.campfire.getInteraction(p), G.world.getInteraction(p), G.progression.getInteraction(p), G.creatures.getInteraction(p)].filter(Boolean);
   cands.sort((a, b) => a.dist - b.dist);
   G.interaction = cands[0] || null;
   if (G.interaction && !G.interaction.disabled && G.input.pressed('KeyE')) G.interaction.action();
@@ -82,6 +88,7 @@ function updateThreat() {
   const d = G.deer, b = G.bear;
   if (['stalk', 'approach', 'windup', 'lunge', 'frozen', 'stunned'].includes(d.state)) { const dist = Math.hypot(d.pos.x - p.x, d.pos.z - p.z); th = Math.max(th, (1 - dist / 26) * (d.state === 'stalk' ? 0.7 : 1)); }
   if (['stalk', 'notice', 'rear', 'charge'].includes(b.state)) { const dist = Math.hypot(b.pos.x - p.x, b.pos.z - p.z); th = Math.max(th, (1 - dist / 24) * (b.state === 'charge' ? 1.2 : 0.7)); }
+  th = Math.max(th, G.creatures.threatAt(p));
   G.threat = G.mode === 'playing' ? Math.max(0, Math.min(1, th)) : 0;
 }
 
@@ -100,8 +107,11 @@ function frame() {
   G.flashlight.update(dt);
   G.deer.update(dt);
   G.bear.update(dt);
+  G.progression.update(dt);
+  G.creatures.update(dt);
   updateThreat();
   G.audio.update(dt);
+  G.music.update(dt);
   G.ui.update(dt);
   renderer.render(scene, camera);
   G.input.endFrame();
