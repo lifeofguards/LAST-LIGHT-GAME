@@ -11,7 +11,7 @@ The adventure expansion is done and pushed (commits 008d4c3, e8b157b, 0421387):
 
 The full design is in `docs/EXPANSION.md`.
 
-**Next: the deployed URL. It is blocked on GitHub sign-in.**
+**Deployed 2026-11-05:** https://lifeofguards.github.io/last-light-demo/ (public repo, Pages deploys from GitHub Actions on every push to main). The steps below are done.
 - The Chrome that Claude controls (Claude in Chrome) is NOT signed in to GitHub, and the `gh` CLI isn't logged in. SSH push works.
 - The owner already approved making the repo public. Once someone is signed in as lifeofguards:
   1. In Settings → Danger Zone, choose Change visibility → Public.
