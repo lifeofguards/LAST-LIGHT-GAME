@@ -18,7 +18,7 @@ export function createUI(G) {
     <div id="vignette"></div><div id="lowhp"></div><div id="hurt"></div><div id="hurtflash"></div><div id="dmgnum"></div><div id="lowhptag">LOW HEALTH · get to the fire, eat berries</div><div id="crosshair"></div><div id="hitmark"></div><div id="treehp"><span id="treehpl">Tree</span><div id="treepips"></div></div>
     <div id="topbar"><div id="phase"><span id="phaseicon"></span><span id="phasetxt">DAY 1</span></div>
       <div id="cyclebar"><div id="cyclefill"></div></div><div id="clock">06:00</div><div id="nights">${'<i></i>'.repeat(5)}</div></div>
-    <div id="fire">${ICON.fire}<div class="fcol"><div class="lbl"><span>Campfire</span><span id="firestat">Burning</span></div><div class="bar"><div id="firefill"></div></div></div></div>
+    <div id="fire">${ICON.fire}<div class="fcol"><div class="lbl"><span>Campfire</span><span id="firestat">Burning</span></div><div class="bar"><div id="firefill"></div></div><div class="flv"><b id="firelvb">FIRE LV 1</b><span id="firepips"><i class="on"></i><i></i><i></i><i></i></span><span id="firelvl">0/6 logs</span></div><div class="xbar"><div id="firexp"></div></div><div id="firenext">Next: opens the Wolf Den</div></div></div>
     <div id="threatv"></div>
     <div id="goal"><div class="gh">OBJECTIVE</div><div id="goaltxt"></div><div id="goalsub"></div></div>
     <div id="firemark"><div class="fmb"><i id="firearrow"></i>${ICON.fire}</div><span id="firedist"></span></div>
@@ -43,7 +43,7 @@ export function createUI(G) {
     <div class="tag">Keep the fire burning. How many nights can you survive?</div>
     <div class="steps">
       <div class="step"><div class="sn">1</div>${ICON.axe}<b>Chop trees</b><span>Walk up to a tree and press E (or click). Trees drop logs.</span></div>
-      <div class="step"><div class="sn">2</div>${ICON.fire}<b>Feed the fire</b><span>Press E at the campfire to add logs.</span></div>
+      <div class="step"><div class="sn">2</div>${ICON.fire}<b>Feed the fire</b><span>Press E at the campfire to add logs. Feeding it levels the fire up and opens more land.</span></div>
       <div class="step"><div class="sn">3</div>${ICON.moon}<b>Stay in the light</b><span>The dark is not safe. Shine your flashlight (F) at glowing eyes.</span></div>
     </div>
     <button class="btn" id="playbtn">PLAY</button>
@@ -85,8 +85,9 @@ export function createUI(G) {
     },
     showWin() { el.hud.classList.add('hidden'); el.win.classList.remove('hidden'); },
     flashHurt(a = 1) { hurt = Math.max(hurt, a); },
+    pulseFireLevel() { const f = $('fire'); f.classList.remove('lvup'); void f.offsetWidth; f.classList.add('lvup'); setTimeout(() => f.classList.remove('lvup'), 2600); },
   };
-  G.events.on('equip', ({ item }) => { el.itemname.textContent = { axe: 'Old Axe', flashlight: 'Flashlight', sack: 'Log Sack' }[item]; el.itemname.style.opacity = 1; itemT = 1.2; });
+  G.events.on('equip', ({ item }) => { el.itemname.textContent = { axe: (G.progression && G.progression.axeName) || 'Old Axe', flashlight: 'Flashlight', sack: 'Log Sack' }[item]; el.itemname.style.opacity = 1; itemT = 1.2; });
   G.events.on('damage', ({ amount }) => {
     ui.flashHurt(Math.min(1, 0.6 + amount / 30));
     const hf = $('hurtflash'); hf.classList.remove('go'); void hf.offsetWidth; hf.classList.add('go');
@@ -101,7 +102,7 @@ export function createUI(G) {
   G.events.on('bearDeath', () => ui.toast('The bear falls.'));
   G.events.on('nightStart', () => { if (el.toast.textContent.startsWith('It\'s getting dark')) toastT = Math.min(toastT, 0.01); });
 
-  let lastLowFire = 0, duskWarned = -1, threatV = 0;
+  let lastLowFire = 0, duskWarned = -1, threatV = 0, lvShown = '';
   const v3 = new G.THREE.Vector3(), fwd = new G.THREE.Vector3();
   const stepsDone = { chop: false, feed: false };
   G.events.on('treeFall', ({ tree }) => { stepsDone.chop = true; showTreeHp(tree); ui.toast(`TIMBER! The tree dropped ${tree?.logs || 2} logs. Press E to pick them up.`, 3); });
@@ -159,6 +160,11 @@ export function createUI(G) {
     $('firestat').textContent = fuel <= 0 ? 'OUT' : fuel < 25 ? 'Dying' : fuel < 60 ? 'Burning' : 'Roaring';
     $('fire').classList.toggle('out', fuel <= 0);
     $('fire').classList.toggle('low', fuel < 25);
+    { const lv = G.progression && G.progression.levelInfo ? G.progression.levelInfo() : null; // fire level · logs toward the next one
+      if (lv && lvShown !== lv.text) { lvShown = lv.text;
+        $('firelvb').textContent = `FIRE LV ${lv.level}`; $('firelvl').textContent = lv.max ? 'MAX' : `${lv.into}/${lv.span} logs`; $('firenext').textContent = lv.hint || '';
+        [...$('firepips').children].forEach((p, i) => { p.className = i < lv.level ? 'on' : ''; });
+        $('firexp').style.width = (lv.max ? 100 : 100 * lv.into / lv.span).toFixed(1) + '%'; $('fire').classList.toggle('maxlv', lv.max); } }
     if (fuel < 20 && fuel > 0 && G.time - lastLowFire > 25) { lastLowFire = G.time; ui.toast('The fire is dying! Feed it logs.'); }
     $('hpv').textContent = Math.ceil(st.health); $('hungerv').textContent = Math.ceil(st.hunger);
     $('hpfill').style.width = st.health + '%'; $('hungerfill').style.width = st.hunger + '%'; $('stamfill').style.width = st.stamina + '%';
@@ -185,7 +191,8 @@ export function createUI(G) {
       else if (!stepsDone.chop) setGoal('Chop a tree for logs', 'Walk up to a tree · click or [E] to swing the axe');
       else if (!stepsDone.feed) setGoal('Pick up logs and feed the fire', '[E] to pick up · [E] at the fire');
       else if (st.hunger < 40) setGoal('Eat something', 'Red berry bushes grow out in the forest · [E] to pick');
-      else setGoal(`Stock up before night ${dn.night + 1}`, `Gather logs · night in ${Math.ceil(dn.timeLeft())}s`);
+      else { const ph = G.progression && G.progression.goalHint ? G.progression.goalHint() : null; // the adventure: grow the fire, clear the caves
+        if (ph && dn.timeLeft() > 25) setGoal(ph[0], ph[1]); else setGoal(`Stock up before night ${dn.night + 1}`, `Gather logs · night in ${Math.ceil(dn.timeLeft())}s`); }
       const tl = dn.timeLeft();
       // dusk banner stays up until the exact moment NIGHT N fires (darkness curve is keyed to the same timer)
       if (tl < 18 && duskWarned !== dn.day) { duskWarned = dn.day; ui.toast('It\'s getting dark... head back to the fire.', tl + 0.1); }

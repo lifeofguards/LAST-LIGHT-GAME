@@ -71,10 +71,11 @@ export function eyeTexture() {
   x.fillStyle = g; x.fillRect(0, 0, 64, 64); _eyeTex = new THREE.CanvasTexture(cv); _eyeTex.colorSpace = THREE.SRGBColorSpace; return _eyeTex;
 }
 
-export function createBear(G) {
-  const { scene } = G;
+// The bear's chunky box body, built once per bear. Exported so the gray bears and the gray Alpha (creatures)
+// reuse the exact same rig with their own palette. Returns the posable parts and the materials.
+export function buildBearRig(scene, pal = {}) {
   const mat = (c) => new THREE.MeshLambertMaterial({ color: c, flatShading: true });
-  const fur = mat('#5a3a23'), fur2 = mat('#462c1a'), snoutM = mat('#b08a60'), nose = mat('#141010'), claw = mat('#d8cfbf'), mouth = mat('#4a1010');
+  const fur = mat(pal.fur || '#5a3a23'), fur2 = mat(pal.fur2 || '#462c1a'), snoutM = mat(pal.snout || '#b08a60'), nose = mat('#141010'), claw = mat('#d8cfbf'), mouth = mat('#4a1010');
   const furMats = [fur, fur2, snoutM], allBearMats = [fur, fur2, snoutM, nose, claw, mouth];
   const box = (w, h, d, m, x = 0, y = 0, z = 0) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); b.castShadow = true; return b; };
   const root = new THREE.Group(); scene.add(root);
@@ -92,14 +93,22 @@ export function createBear(G) {
   head.add(box(0.22, 0.22, 0.12, fur2, -0.32, 0.45, 0.15)); head.add(box(0.22, 0.22, 0.12, fur2, 0.32, 0.45, 0.15));
   const eyeMat = new THREE.MeshBasicMaterial({ color: '#111' });
   head.add(box(0.09, 0.09, 0.02, eyeMat, -0.24, 0.14, 0.605)); head.add(box(0.09, 0.09, 0.02, eyeMat, 0.24, 0.14, 0.605));
-  const eyePair = makeEyePair(head, [-0.25, 0.25], 0.15, 0.66, '#c8ff7a'); const shineMat = eyePair.coreMat;
+  const eyePair = makeEyePair(head, [-0.25, 0.25], 0.15, 0.66, pal.eye || '#c8ff7a');
   const legs = [];
   for (const [x, z] of [[-0.45, 0.75], [0.45, 0.75], [-0.45, -0.75], [0.45, -0.75]]) {
     const p = new THREE.Group(); p.position.set(x, 0.95, z); body.add(p); p.add(box(0.42, 0.95, 0.5, fur2, 0, -0.47, 0));
     for (let k = -1; k <= 1; k++) p.add(box(0.06, 0.06, 0.14, claw, k * 0.12, -0.92, 0.3));
     legs.push(p);
   }
-  const rimMat = addRim(root, '#a9bedf');
+  if (pal.extra) pal.extra({ body, head, box, mats: { fur, fur2, snoutM, nose, claw, mouth } }); // optional decorations (scars, mane)
+  const rimMat = addRim(root, pal.rim || '#a9bedf');
+  return { root, rig, body, head, jaw, legs, eyePair, rimMat, furMats, allBearMats, box };
+}
+
+export function createBear(G) {
+  const { scene } = G;
+  const { root, rig, body, head, jaw, legs, eyePair, rimMat, furMats, allBearMats } = buildBearRig(scene);
+  const shineMat = eyePair.coreMat;
   const EYE_STALK = new THREE.Color('#c8ff7a'), EYE_RAGE = new THREE.Color('#ffb03a'), RIM_CALM = new THREE.Color('#a9bedf'), RIM_RAGE = new THREE.Color('#ffc890');
   // HP bar (only after it's been hit)
   const barBg = new THREE.Sprite(new THREE.SpriteMaterial({ color: '#1a0d0d', depthTest: false, fog: false, transparent: true, opacity: 0.75 }));
@@ -120,7 +129,7 @@ export function createBear(G) {
     if (b.state === 'dead' || !root.visible) return false;
     const dx = b.pos.x - pp.x, dz = b.pos.z - pp.z, l = Math.hypot(dx, dz);
     if (l > 3.4 || (dx * fwd.x + dz * fwd.z) / (l || 1) < 0.25) return false;
-    b.hp -= 25; b.stagger = 0.5; b.flash = 1; b.barT = 5; G.events.emit('bearHit', { hp: b.hp });
+    b.hp -= 25 * (G.progression?.axeDamage || 1); b.stagger = 0.5; // better axes (progression chests) hit harder b.flash = 1; b.barT = 5; G.events.emit('bearHit', { hp: b.hp });
     b.pos.x += dx / (l || 1) * 0.6; b.pos.z += dz / (l || 1) * 0.6; // knocked back a step
     G.controls.shake = Math.max(G.controls.shake, 0.2);
     if (b.hp <= 0) { b.hp = 0; setState('dead'); G.events.emit('bearDeath'); }
@@ -228,7 +237,7 @@ export function createBear(G) {
     // rises a little, so the telegraph, the charge and the retreat are never hidden behind the player's head
     const tf = (G._threatFade ??= {});
     tf.bear = (['notice', 'rear', 'charge', 'swipe', 'backoff'].includes(b.state) && dist < 26 && b.state !== 'dead') ? 1 : 0;
-    const wantF = Math.max(tf.deer || 0, tf.bear);
+    const wantF = Math.max(tf.deer || 0, tf.bear, tf.creatures || 0); // tf.creatures: wolves / gray bears / Alpha (creatures.js)
     tf.k = (tf.k || 0) + (wantF - (tf.k || 0)) * Math.min(1, dt * (wantF > (tf.k || 0) ? 8 : 2.5));
     if (tf.k > 0.01 && G.mode === 'playing' && G.player) {
       const pl = G.player, op = 1 - tf.k * 0.8;

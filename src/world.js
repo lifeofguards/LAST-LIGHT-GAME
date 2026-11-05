@@ -1,11 +1,38 @@
 // World: ground, forest (instanced, choppable trees), berry bushes, rocks/logs/stumps, log pickups, collisions.
 import * as THREE from '../vendor/three.module.js';
 import { mergeGeometries } from '../vendor/jsm/utils/BufferGeometryUtils.js';
+import { MAP_R, reserved, mountainK } from './regions.js';
 
 export function rng(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 
-const MAP_R = 120, CLEAR_R = 17, CELL = 6;
+const CLEAR_R = 17, CELL = 6; // MAP_R (160) lives in regions.js with the fire-level rings
 const LOG_MAX = 5;
+
+// Chunked instancing: one InstancedMesh per CHUNK-metre cell, so the camera and the sun's shadow frustum skip whole
+// patches of the (much larger) forest. Returns an object with the InstancedMesh calls world.js uses, on global indices.
+const CHUNK = 48;
+function chunkedInstances(scene, geo, mat, pts, { cast = false, receive = true } = {}) {
+  const cells = new Map(), where = new Array(pts.length);
+  pts.forEach((p, i) => { const k = Math.floor(p.x / CHUNK) * 4096 + Math.floor(p.z / CHUNK); let c = cells.get(k); if (!c) cells.set(k, c = []); c.push(i); });
+  const meshes = [];
+  for (const ids of cells.values()) {
+    const m = new THREE.InstancedMesh(geo, mat, ids.length); m.castShadow = cast; m.receiveShadow = receive;
+    let cx = 0, cz = 0; for (const i of ids) { cx += pts[i].x; cz += pts[i].z; } cx /= ids.length; cz /= ids.length;
+    let rr = 0; ids.forEach((i, j) => { where[i] = [m, j]; rr = Math.max(rr, Math.hypot(pts[i].x - cx, pts[i].z - cz)); });
+    m.boundingSphere = new THREE.Sphere(new THREE.Vector3(cx, 4, cz), rr + 10); // fixed: felled (zero-scale) instances must not drag it to the origin
+    scene.add(m); meshes.push(m);
+  }
+  const dirtyM = new Set(), dirtyC = new Set();
+  return {
+    meshes, count: pts.length,
+    setMatrixAt(i, mx) { const [m, j] = where[i]; m.setMatrixAt(j, mx); dirtyM.add(m); },
+    getMatrixAt(i, out) { const [m, j] = where[i]; m.getMatrixAt(j, out); return out; },
+    setColorAt(i, c) { const [m, j] = where[i]; m.setColorAt(j, c); dirtyC.add(m); },
+    getColorAt(i, out) { const [m, j] = where[i]; m.getColorAt(j, out); return out; },
+    instanceMatrix: { set needsUpdate(v) { if (v) for (const m of dirtyM) m.instanceMatrix.needsUpdate = true; dirtyM.clear(); } },
+    instanceColor: { set needsUpdate(v) { if (v) for (const m of dirtyC) if (m.instanceColor) m.instanceColor.needsUpdate = true; dirtyC.clear(); } },
+  };
+}
 
 export function createWorld(G) {
   const { scene } = G;
@@ -27,8 +54,9 @@ export function createWorld(G) {
         if (d2 < rr * rr && d2 > 1e-6) { const d = Math.sqrt(d2), push = (rr - d) / d; p.x += ox * push; p.z += oz * push; }
       }
     }
-    const len = Math.hypot(p.x, p.z), lim = MAP_R - 2;
-    if (len > lim) { p.x *= lim / len; p.z *= lim / len; }
+    // edge of the land: the fog barrier at the fire level's radius (and the Mountain once it is open)
+    if (G.progression && G.progression.clampZone) G.progression.clampZone(p, r);
+    else { const len = Math.hypot(p.x, p.z), lim = MAP_R - 2; if (len > lim) { p.x *= lim / len; p.z *= lim / len; } }
     return p;
   };
 
@@ -46,7 +74,7 @@ export function createWorld(G) {
   // ---------- ground ----------
   const groundGeo = new THREE.PlaneGeometry(340, 340, 150, 150); groundGeo.rotateX(-Math.PI / 2);
   const cols = [], pos = groundGeo.attributes.position, c = new THREE.Color();
-  const grassA = new THREE.Color('#5f8c3c'), grassB = new THREE.Color('#47702f'), dirt = new THREE.Color('#7b5e40'), dark = new THREE.Color('#2c4221');
+  const grassA = new THREE.Color('#5f8c3c'), grassB = new THREE.Color('#47702f'), dirt = new THREE.Color('#7b5e40'), dark = new THREE.Color('#2c4221'), snowC = new THREE.Color('#dfe8ee');
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i), r = Math.hypot(x, z);
     const n = (Math.sin(x * 0.21) * Math.cos(z * 0.17) + Math.sin(x * 0.05 + z * 0.07)) * 0.25 + 0.5 + (rand() - 0.5) * 0.25;
@@ -54,6 +82,7 @@ export function createWorld(G) {
     if (r < 7) c.lerp(dirt, THREE.MathUtils.smoothstep(7 - r, 0, 3.5) * 0.85);
     const pd = world.pathDist(x, z); if (pd < 2.4) c.lerp(dirt, (1 - pd / 2.4) * 0.7 * Math.min(1, (r - 6) / 5, (MAP_R - 12 - r) / 10));
     if (r > MAP_R) c.lerp(dark, Math.min(1, (r - MAP_R) / 20));
+    { const sk = mountainK(x, z); if (sk > 0) c.lerp(snowC, sk * 0.9); }
     pos.setY(i, r > 6 ? (Math.sin(x * 0.13) * Math.sin(z * 0.11)) * 0.12 : 0);
     cols.push(c.r, c.g, c.b);
   }
@@ -66,12 +95,12 @@ export function createWorld(G) {
   // grass tufts
   {
     const g = new THREE.ConeGeometry(0.09, 0.45, 3); g.translate(0, 0.2, 0);
-    const n = 2600, m = new THREE.InstancedMesh(g, new THREE.MeshLambertMaterial({ color: '#6f9c45', flatShading: true }), n);
+    const n = 4200, m = new THREE.InstancedMesh(g, new THREE.MeshLambertMaterial({ color: '#6f9c45', flatShading: true }), n);
     const o = new THREE.Object3D(), col = new THREE.Color();
     for (let i = 0; i < n; i++) {
       const a = rand() * Math.PI * 2, r = 5 + Math.sqrt(rand()) * (MAP_R - 5);
       o.position.set(Math.cos(a) * r, 0, Math.sin(a) * r); o.rotation.set((rand() - .5) * .5, rand() * 6, (rand() - .5) * .5);
-      o.scale.setScalar((0.6 + rand() * 0.9) * (world.pathDist(o.position.x, o.position.z) < 1.3 ? 0 : 1)); o.updateMatrix(); m.setMatrixAt(i, o.matrix);
+      o.scale.setScalar((0.6 + rand() * 0.9) * (world.pathDist(o.position.x, o.position.z) < 1.3 || reserved(o.position.x, o.position.z, -2) ? 0 : 1)); o.updateMatrix(); m.setMatrixAt(i, o.matrix);
       m.setColorAt(i, col.setHSL(0.24 + rand() * 0.06, 0.45, 0.32 + rand() * 0.12));
     }
     scene.add(m);
@@ -99,13 +128,14 @@ export function createWorld(G) {
   const occ = new Map();
   const tooClose = (x, z, d) => { const ix = Math.floor(x / 4), iz = Math.floor(z / 4); for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const l = occ.get(key(ix + a, iz + b)); if (l) for (const q of l) if ((q[0] - x) ** 2 + (q[1] - z) ** 2 < d * d) return true; } return false; };
   const mark = (x, z) => { const k = key(Math.floor(x / 4), Math.floor(z / 4)); if (!occ.has(k)) occ.set(k, []); occ.get(k).push([x, z]); };
-  for (let i = 0; i < 9000 && cand.length < 1100; i++) {
+  for (let i = 0; i < 16000 && cand.length < 1880; i++) {
     const a = rand() * Math.PI * 2, r = CLEAR_R + 3 + Math.sqrt(rand()) * (MAP_R + 14 - CLEAR_R);
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
     const spacing = r < 30 ? 5.5 : r > MAP_R ? 2.6 : 3.4;
     if (rand() < (r < 28 ? 0.5 : 0)) continue;
     if (tooClose(x, z, spacing)) continue;
     if (world.pathDist(x, z) < 2.6) continue;
+    if (reserved(x, z)) continue;
     mark(x, z); cand.push({ x, z, r });
   }
   const pineIdx = [], oakIdx = [];
@@ -119,12 +149,10 @@ export function createWorld(G) {
     t.i = world.trees.length; world.trees.push(t);
     t.collider = world.addCollider({ x: t.x, z: t.z, r: 0.45 * t.s, tree: t });
   }
-  const trunks = new THREE.InstancedMesh(trunkGeo, barkMat, world.trees.length);
-  const pines = new THREE.InstancedMesh(pineGeo, leafMat, pineIdx.length);
-  const oaks = new THREE.InstancedMesh(oakGeo, leafMat, oakIdx.length);
-  const stumps = new THREE.InstancedMesh(stumpGeo, barkMat, world.trees.length);
-  for (const m of [trunks, pines, oaks]) { m.castShadow = true; m.receiveShadow = true; scene.add(m); }
-  scene.add(stumps);
+  const trunks = chunkedInstances(scene, trunkGeo, barkMat, world.trees, { cast: true });
+  const pines = chunkedInstances(scene, pineGeo, leafMat, pineIdx, { cast: true });
+  const oaks = chunkedInstances(scene, oakGeo, leafMat, oakIdx, { cast: true });
+  const stumps = chunkedInstances(scene, stumpGeo, barkMat, world.trees, { receive: false });
 
   // ---------- endless backdrop: dense non-interactive forest past the map edge + far ground disc ----------
   // Nothing past the playable ring is ever empty: the fog swallows row after row of trees instead of a flat edge.
@@ -132,20 +160,20 @@ export function createWorld(G) {
     const far = new THREE.Mesh(new THREE.CircleGeometry(520, 48).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: '#34502a' }));
     far.position.y = -0.06; scene.add(far);
     const bt = [], bRand = rng(4242);
-    for (let i = 0; i < 6000 && bt.length < 1300; i++) {
-      const a = bRand() * Math.PI * 2, r = MAP_R + 12 + Math.sqrt(bRand()) * 95;
+    for (let i = 0; i < 6000 && bt.length < 1100; i++) {
+      const a = bRand() * Math.PI * 2, r = MAP_R + 12 + Math.sqrt(bRand()) * 80;
       const x = Math.cos(a) * r, z = Math.sin(a) * r;
-      if (tooClose(x, z, r < 160 ? 2.8 : 3.6)) continue;
+      if (tooClose(x, z, r < MAP_R + 40 ? 2.8 : 3.6)) continue;
+      if (reserved(x, z)) continue;
       mark(x, z); bt.push({ x, z, s: 0.95 + bRand() * 0.7, pine: bRand() < 0.75, rot: bRand() * 6.28 });
     }
     const bp = bt.filter(t => t.pine), bo = bt.filter(t => !t.pine);
-    const bTr = new THREE.InstancedMesh(trunkGeo, barkMat, bt.length);
-    const bPi = new THREE.InstancedMesh(pineGeo, leafMat, bp.length), bOa = new THREE.InstancedMesh(oakGeo, leafMat, bo.length);
+    const bTr = chunkedInstances(scene, trunkGeo, barkMat, bt);
+    const bPi = chunkedInstances(scene, pineGeo, leafMat, bp), bOa = chunkedInstances(scene, oakGeo, leafMat, bo);
     const o = new THREE.Object3D(), cc = new THREE.Color();
     bt.forEach((t, i) => { o.position.set(t.x, 0, t.z); o.rotation.set(0, t.rot, 0); o.scale.set(t.s, t.s * (1 + bRand() * 0.35), t.s); o.updateMatrix(); t.m = o.matrix.clone(); bTr.setMatrixAt(i, t.m); });
     bp.forEach((t, i) => { bPi.setMatrixAt(i, t.m); bPi.setColorAt(i, cc.setHSL(0.36 + bRand() * 0.05, 0.4, 0.22 + bRand() * 0.07)); });
     bo.forEach((t, i) => { bOa.setMatrixAt(i, t.m); bOa.setColorAt(i, cc.setHSL(0.26 + bRand() * 0.05, 0.42, 0.26 + bRand() * 0.07)); });
-    for (const m of [bTr, bPi, bOa]) { m.receiveShadow = true; scene.add(m); }
     world.backdrop = { trunks: bTr, pines: bPi, oaks: bOa, count: bt.length };
   }
 
@@ -201,9 +229,9 @@ export function createWorld(G) {
 
   // ---------- props: rocks, fallen logs, stumps ----------
   const rockMat = new THREE.MeshLambertMaterial({ color: '#8b8a84', flatShading: true });
-  for (let i = 0; i < 38; i++) {
+  for (let i = 0; i < 64; i++) {
     const a = rand() * 6.28, r = 12 + rand() * (MAP_R - 16), x = Math.cos(a) * r, z = Math.sin(a) * r;
-    if (tooClose(x, z, 2.2)) continue;
+    if (tooClose(x, z, 2.2) || reserved(x, z)) continue;
     const s = 0.4 + rand() * 1.1;
     const m = new THREE.Mesh(new THREE.DodecahedronGeometry(1, 0), rockMat);
     m.position.set(x, s * 0.35, z); m.scale.set(s * (1 + rand() * .5), s * (0.6 + rand() * .4), s); m.rotation.set(rand(), rand() * 6, rand());
@@ -212,18 +240,18 @@ export function createWorld(G) {
   }
   const bark2 = new THREE.MeshLambertMaterial({ color: '#5e4128', flatShading: true });
   const endMat = new THREE.MeshLambertMaterial({ color: '#c9a36b', flatShading: true });
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 20; i++) {
     const a = rand() * 6.28, r = 20 + rand() * (MAP_R - 26), x = Math.cos(a) * r, z = Math.sin(a) * r;
-    if (tooClose(x, z, 3)) continue;
+    if (tooClose(x, z, 3) || reserved(x, z)) continue;
     const L = 3 + rand() * 2.5;
     const m = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.4, L, 7), [bark2, endMat, endMat]);
     m.rotation.set(0, rand() * 6, Math.PI / 2); m.position.set(x, 0.35, z); m.castShadow = true; scene.add(m);
     m.rotation.order = 'YXZ';
     world.addCollider({ x, z, r: 0.8 });
   }
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < 24; i++) {
     const a = rand() * 6.28, r = 14 + rand() * (MAP_R - 20), x = Math.cos(a) * r, z = Math.sin(a) * r;
-    if (tooClose(x, z, 2)) continue;
+    if (tooClose(x, z, 2) || reserved(x, z)) continue;
     const m = new THREE.Mesh(stumpGeo, [bark2, endMat, endMat]); m.position.set(x, 0, z); m.scale.setScalar(1 + rand() * .6); m.castShadow = true; scene.add(m);
     world.addCollider({ x, z, r: 0.45 });
   }
@@ -231,18 +259,18 @@ export function createWorld(G) {
   // ---------- ground decor: ferns, flowers, mushrooms (instanced, cheap) ----------
   {
     const fernGeo = mergeGeometries([0, 1, 2, 3, 4].map(k => new THREE.BoxGeometry(0.12, 0.04, 0.9).translate(0, 0.2, 0.42).rotateX(-0.45).rotateY(k * 1.256)));
-    const fn = 420, ferns = new THREE.InstancedMesh(fernGeo, new THREE.MeshLambertMaterial({ color: '#ffffff', flatShading: true }), fn);
+    const fn = 700, ferns = new THREE.InstancedMesh(fernGeo, new THREE.MeshLambertMaterial({ color: '#ffffff', flatShading: true }), fn);
     const flGeo = mergeGeometries([new THREE.BoxGeometry(0.04, 0.3, 0.04).translate(0, 0.15, 0), new THREE.BoxGeometry(0.16, 0.08, 0.16).translate(0, 0.32, 0)]);
-    const fln = 220, flowers = new THREE.InstancedMesh(flGeo, new THREE.MeshLambertMaterial({ color: '#ffffff', flatShading: true }), fln);
+    const fln = 360, flowers = new THREE.InstancedMesh(flGeo, new THREE.MeshLambertMaterial({ color: '#ffffff', flatShading: true }), fln);
     const muGeo = mergeGeometries([new THREE.CylinderGeometry(0.05, 0.06, 0.2, 5).translate(0, 0.1, 0), new THREE.ConeGeometry(0.17, 0.14, 6).translate(0, 0.25, 0)]);
-    const mun = 120, mush = new THREE.InstancedMesh(muGeo, new THREE.MeshLambertMaterial({ color: '#ffffff', flatShading: true }), mun);
+    const mun = 200, mush = new THREE.InstancedMesh(muGeo, new THREE.MeshLambertMaterial({ color: '#ffffff', flatShading: true }), mun);
     const o = new THREE.Object3D(), col = new THREE.Color();
     const place = (m, n, rMin, near, colorFn, sMin, sMax) => {
       for (let i = 0; i < n; i++) {
         let x, z;
         if (near && world.trees.length) { const t = world.trees[Math.floor(rand() * world.trees.length)]; const a = rand() * 6.28, d = 0.7 + rand() * 1.4; x = t.x + Math.cos(a) * d; z = t.z + Math.sin(a) * d; }
         else { const a = rand() * 6.28, r = rMin + Math.sqrt(rand()) * (MAP_R - rMin); x = Math.cos(a) * r; z = Math.sin(a) * r; }
-        const ok = world.pathDist(x, z) > 1.5 && Math.hypot(x, z) > rMin;
+        const ok = world.pathDist(x, z) > 1.5 && Math.hypot(x, z) > rMin && !reserved(x, z, -1);
         o.position.set(x, 0, z); o.rotation.set(0, rand() * 6.28, 0); o.scale.setScalar(ok ? sMin + rand() * (sMax - sMin) : 0); o.updateMatrix();
         m.setMatrixAt(i, o.matrix); m.setColorAt(i, colorFn(col));
       }
@@ -269,7 +297,7 @@ export function createWorld(G) {
   for (let i = 0; i < 18; i++) {
     let x, z, tries = 0;
    
-    do { const a = rand() * 6.28, r = (i < 2 ? 18 : 32) + rand() * (i < 2 ? 3 : 50); x = Math.cos(a) * r; z = Math.sin(a) * r; tries++; } while (tooClose(x, z, 2.5) && tries < 30);
+    do { const a = rand() * 6.28, r = (i < 2 ? 18 : 32) + rand() * (i < 2 ? 3 : 50); x = Math.cos(a) * r; z = Math.sin(a) * r; tries++; } while ((tooClose(x, z, 2.5) || reserved(x, z)) && tries < 30);
     mark(x, z);
     const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = rand() * 6;
     const b = new THREE.Mesh(bushGeo, bushMat); b.castShadow = true; g.add(b);
@@ -344,6 +372,7 @@ export function createWorld(G) {
       const list = grid.get(key(ix + dx, iz + dz)); if (!list) continue;
       for (const c of list) {
         if (!c.active || !c.tree) continue;
+        if (G.progression && !G.progression.inBounds(c.x, c.z, 0.5)) continue; // trees in the fog wall can't be reached
         const ox = c.x - px, oz = c.z - pz, d = Math.hypot(ox, oz) - c.r;
         if (d > reach) continue;
         const dot = (ox * fx + oz * fz) / (Math.hypot(ox, oz) || 1);

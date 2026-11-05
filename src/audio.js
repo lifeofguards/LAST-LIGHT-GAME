@@ -15,8 +15,32 @@ export function createAudio(G) {
   const vis = { dist: 0, occ: 0, inView: false, visible: false, range: 0 };
   let birdBus = null, threatHold = 0, nextHuff = 0, bearMovingNow = false, bearProx = 0;
   let nextCricket = 0, nextBird = 0, nextCrackle = 0, nextBeat = 0, nextHowl = 0, nextOwl = 0, nextTwig = 0, nextPaw = 0, duskDay = 0;
+  let fireBus, fireMuffle, flutterF, flutterGain, hissF, hissGain, crackSubs = [], clickBufs = [], popBufs = [], nextPop = 0, nextRoar = 0;
+  const fireStats = { dist: 0, fall: 0, fuelK: 0, level: 1, rate: 0, crackles: 0, pops: 0, sizzles: 0 };
 
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  // ---- fire one-shots are pre-rendered once into small buffers, so each crackle is just BufferSource -> Gain
+  // crackle: a sub-millisecond noise snap blended with a short resonant "tick" (wood fibre / ember burst)
+  const mkCrackleBuf = () => { const sr = ctx.sampleRate, n = Math.floor(sr * 0.035), b = ctx.createBuffer(1, n, sr), d = b.getChannelData(0);
+    const f = 1100 + Math.random() * 5200, dec = 0.0007 + Math.random() * 0.0035, w = 2 * Math.PI * f / sr, r = Math.exp(-1 / (sr * dec)), a1 = 2 * r * Math.cos(w), a2 = -r * r;
+    const res = new Float32Array(n); let y1 = 0, y2 = 0, pr = 1e-9, pi = 1e-9;
+    for (let i = 0; i < n; i++) { const imp = (Math.random() * 2 - 1) * Math.exp(-i / (sr * 0.00035)); const y = imp + a1 * y1 + a2 * y2; y2 = y1; y1 = y; res[i] = y; d[i] = imp; pr = Math.max(pr, Math.abs(y)); pi = Math.max(pi, Math.abs(imp)); }
+    const mix = 0.35 + Math.random() * 0.4; let pk = 1e-9;
+    for (let i = 0; i < n; i++) { d[i] = d[i] / pi * (1 - mix) + res[i] / pr * mix; pk = Math.max(pk, Math.abs(d[i])); }
+    for (let i = 0; i < n; i++) d[i] = d[i] / pk * (i > n - 64 ? (n - i) / 64 : 1);
+    return b; };
+  // pop: a sap pocket bursting. Hard transient + a low woody body that drops in pitch + a bright snap
+  const mkPopBuf = () => { const sr = ctx.sampleRate, n = Math.floor(sr * 0.2), b = ctx.createBuffer(1, n, sr), d = b.getChannelData(0);
+    const f0 = 130 + Math.random() * 240, fs = 1800 + Math.random() * 1600, w = 2 * Math.PI * fs / sr, r = Math.exp(-1 / (sr * 0.004)), a1 = 2 * r * Math.cos(w), a2 = -r * r;
+    let ph = 0, y1 = 0, y2 = 0, pk = 1e-9;
+    for (let i = 0; i < n; i++) { const t = i / sr, nz = Math.random() * 2 - 1; ph += 2 * Math.PI * f0 * (1 - 0.35 * t / 0.2) / sr;
+      const snapIn = nz * Math.exp(-t / 0.003), y = snapIn + a1 * y1 + a2 * y2; y2 = y1; y1 = y;
+      d[i] = nz * Math.exp(-t / 0.0012) * 1.0 + Math.sin(ph) * Math.exp(-t / 0.022) * 0.7 + y * 0.012; pk = Math.max(pk, Math.abs(d[i])); }
+    for (let i = 0; i < n; i++) d[i] = d[i] / pk * (i > n - 128 ? (n - i) / 128 : 1);
+    return b; };
+  // distance -> fire loudness: full on top of it, ~-18 dB at the 14 m camp edge, gone by ~48 m
+  const fireFall = (d) => Math.pow(clamp(1 - d / 48, 0, 1), 1.5) / (1 + Math.pow(Math.max(0, d - 1.5) / 5, 1.6));
+  const fuelKOf = (fuel) => fuel > 0 ? 0.3 + 0.7 * Math.min(1, fuel / 70) : 0;
   const note = (name) => { A.counts[name] = (A.counts[name] || 0) + 1; A.log.push({ ev: name, t: +(ctx ? ctx.currentTime : 0).toFixed(2) }); if (A.log.length > 30) A.log.shift(); };
 
   const makeLoopSrc = (buf, rate = 1) => { const s = ctx.createBufferSource(); s.buffer = buf; s.loop = true; s.playbackRate.value = rate; s.start(0, Math.random() * 2); return s; };
@@ -36,7 +60,9 @@ export function createAudio(G) {
     const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4; comp.attack.value = 0.005; comp.release.value = 0.2;
     muteGain = ctx.createGain(); muteGain.gain.value = A.muted ? 0 : 1;
     master = ctx.createGain(); master.gain.value = 0.9; master.connect(comp);
-    birdBus = ctx.createGain(); birdBus.gain.value = 1; birdBus.connect(master); // birds route here so any bear/deer threat can hard-mute them instantly (incl. already-scheduled chirps) comp.connect(muteGain); muteGain.connect(ctx.destination);
+    birdBus = ctx.createGain(); birdBus.gain.value = 1; birdBus.connect(master); // birds route here so any bear/deer threat can hard-mute them instantly (incl. already-scheduled chirps)
+    comp.connect(muteGain); muteGain.connect(ctx.destination); // (this line used to sit inside the comment above, so nothing reached the speakers)
+    A.master = master; // music.js mixes into this same bus (same compressor, same M mute)
     // white + brown noise buffers
     const len = ctx.sampleRate * 3;
     noise = ctx.createBuffer(1, len, ctx.sampleRate); const d = noise.getChannelData(0);
@@ -49,10 +75,18 @@ export function createAudio(G) {
     // leaf rustle (high white noise that rides the gusts)
     rustleFilter = ctx.createBiquadFilter(); rustleFilter.type = 'highpass'; rustleFilter.frequency.value = 3500;
     rustleGain = ctx.createGain(); rustleGain.gain.value = 0; makeLoopSrc(noise, 0.9).connect(rustleFilter).connect(rustleGain).connect(master);
-    // fire roar bed (spatial)
-    fireFilter = ctx.createBiquadFilter(); fireFilter.type = 'lowpass'; fireFilter.frequency.value = 380;
-    fireGain = ctx.createGain(); fireGain.gain.value = 0; firePan = ctx.createStereoPanner();
-    makeLoopSrc(brown, 0.8).connect(fireFilter).connect(fireGain).connect(firePan).connect(master);
+    // campfire voice, all into one spatial fire bus (distance gain -> distance/behind muffle -> pan):
+    // low roar (brown noise, lowpassed, "breathing"), a fluttering mid band, a thin hiss, plus scheduled crackles and pops
+    fireBus = ctx.createGain(); fireBus.gain.value = 0; fireMuffle = ctx.createBiquadFilter(); fireMuffle.type = 'lowpass'; fireMuffle.frequency.value = 12000; firePan = ctx.createStereoPanner();
+    fireBus.connect(fireMuffle).connect(firePan).connect(master);
+    fireFilter = ctx.createBiquadFilter(); fireFilter.type = 'lowpass'; fireFilter.frequency.value = 380; fireFilter.Q.value = 0.9;
+    fireGain = ctx.createGain(); fireGain.gain.value = 0; makeLoopSrc(brown, 0.8).connect(fireFilter).connect(fireGain).connect(fireBus);
+    flutterF = ctx.createBiquadFilter(); flutterF.type = 'bandpass'; flutterF.frequency.value = 650; flutterF.Q.value = 0.8;
+    flutterGain = ctx.createGain(); flutterGain.gain.value = 0; makeLoopSrc(brown, 1.7).connect(flutterF).connect(flutterGain).connect(fireBus);
+    hissF = ctx.createBiquadFilter(); hissF.type = 'highpass'; hissF.frequency.value = 5200;
+    hissGain = ctx.createGain(); hissGain.gain.value = 0; makeLoopSrc(noise, 1).connect(hissF).connect(hissGain).connect(fireBus);
+    crackSubs = [-0.5, -0.17, 0.17, 0.5].map((p) => { const g = ctx.createGain(), sp = ctx.createStereoPanner(); sp.pan.value = p; g.connect(sp).connect(fireBus); return g; });
+    clickBufs = Array.from({ length: 12 }, mkCrackleBuf); popBufs = Array.from({ length: 6 }, mkPopBuf);
     // night drone: detuned low saws through a slow-moving lowpass; swells with threat
     droneFilter = ctx.createBiquadFilter(); droneFilter.type = 'lowpass'; droneFilter.frequency.value = 220; droneFilter.Q.value = 4;
     droneGain = ctx.createGain(); droneGain.gain.value = 0; droneFilter.connect(droneGain).connect(master);
@@ -98,6 +132,19 @@ export function createAudio(G) {
     return { pan: (dx * rx + dz * rz) / dist * 0.85, vol: Math.max(0, 1 - dist / maxD) ** 1.3, behind: (dx * fx + dz * fz) / dist < -0.2, dist };
   };
   const ok = () => A.started && ctx && ctx.state === 'running';
+  // fire one-shots, scheduled at exact times into the fire bus (so distance, pan and muffle apply)
+  const crackleAt = (tt, k) => { const n = Math.random() < 0.58 ? 1 : Math.random() < 0.75 ? 2 + (Math.random() * 2 | 0) : 4 + (Math.random() * 5 | 0);
+    const sub = crackSubs[(Math.random() * crackSubs.length) | 0]; let x = tt, amp = (0.05 + 0.42 * Math.random() ** 2.2) * (0.55 + 0.45 * k);
+    for (let i = 0; i < n; i++) { const s = ctx.createBufferSource(); s.buffer = clickBufs[(Math.random() * clickBufs.length) | 0]; s.playbackRate.value = 0.65 + Math.random() * 0.9;
+      const g = ctx.createGain(); g.gain.value = amp; s.connect(g).connect(sub); s.start(x); x += 0.004 + Math.random() * 0.04; amp *= 0.5 + Math.random() * 0.45; }
+    fireStats.crackles += n; };
+  const sizzle = (tt, dur, gain, sub) => { const s = ctx.createBufferSource(); s.buffer = noise; const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.setValueAtTime(5000 + Math.random() * 3000, tt); f.frequency.linearRampToValueAtTime(3500 + Math.random() * 2000, tt + dur); f.Q.value = 1.4;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, tt); g.gain.exponentialRampToValueAtTime(gain, tt + dur * 0.25); g.gain.exponentialRampToValueAtTime(0.0001, tt + dur);
+    s.connect(f).connect(g).connect(sub); s.start(tt, Math.random() * 2); s.stop(tt + dur + 0.05); fireStats.sizzles++; };
+  const popAt = (tt, k, lvl) => { const sub = crackSubs[(Math.random() * crackSubs.length) | 0], s = ctx.createBufferSource(); s.buffer = popBufs[(Math.random() * popBufs.length) | 0];
+    s.playbackRate.value = (0.8 + Math.random() * 0.45) * (1 - 0.05 * (lvl - 1)); const g = ctx.createGain(); g.gain.value = (0.2 + 0.35 * Math.random()) * (0.5 + 0.5 * k); s.connect(g).connect(sub); s.start(tt);
+    if (Math.random() < 0.3) sizzle(tt + 0.05 + Math.random() * 0.1, 0.3 + Math.random() * 0.7, 0.02 + 0.03 * k, sub); // steam hissing out of the split
+    if (Math.random() < 0.4) crackleAt(tt + 0.03 + Math.random() * 0.08, k); fireStats.pops++; };
 
   const on = (ev, fn) => G.events.on(ev, (d) => { if (ok()) { note(ev); fn(d || {}); } });
   let stepAlt = 0;
@@ -197,7 +244,83 @@ export function createAudio(G) {
       const fl = ctx.createBiquadFilter(); fl.type = 'lowpass'; fl.frequency.value = 1100; const g = ctx.createGain(); env(g, tk, 0.5, 0.035, 2.9);
       o.connect(fl).connect(g).connect(out(1, p + (Math.random() - .5) * 0.2)); o.start(tk); vib.start(tk); o.stop(tk + 3); vib.stop(tk + 3); }
     note('howl'); };
-  const owl = () => { const t = now(), p = (Math.random() - .5) * 1.4; for (const [dt, f, d] of [[0, 420, 0.25], [0.35, 400, 0.2], [0.62, 380, 0.45]]) tone({ t: t + dt, f0: f, f1: f * 0.92, dur: d, gain: 0.02, attack: 0.05, pan: p, filter: 900 }); note('owl'); };
+  const owl = (p = (Math.random() - .5) * 1.4, v = 1) => { const t = now(); for (const [dt, f, d] of [[0, 420, 0.25], [0.35, 400, 0.2], [0.62, 380, 0.45]]) tone({ t: t + dt, f0: f, f1: f * 0.92, dur: d, gain: 0.02 * v, attack: 0.05, pan: p, filter: 900 }); note('owl'); };
+
+  // ---------- expansion events (wolves, gray bears, the Alpha, keys, gates, fire levels, regions, wildlife) ----------
+  // every handler tolerates a missing payload; {x,z} makes it spatial, otherwise it plays close and centred
+  const where = (d, maxD = 60) => d && Number.isFinite(d.x) && Number.isFinite(d.z) ? spatial(d.x, d.z, maxD) : { pan: 0, vol: 0.85, behind: false, dist: 4 };
+  // one wolf: slide up into the howl, hold, sag down; saw + 2nd harmonic through a throat formant, with vibrato
+  const wolfVoice = (tk, base, s, len, g) => { const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = (s.behind ? 900 : 1700) * (0.45 + 0.55 * s.vol) + 350;
+    const fl = ctx.createBiquadFilter(); fl.type = 'bandpass'; fl.frequency.value = base * 1.7; fl.Q.value = 1.1; const h2 = ctx.createGain(); h2.gain.value = 0.4;
+    const e = ctx.createGain(); e.gain.setValueAtTime(0.0001, tk); e.gain.exponentialRampToValueAtTime(g, tk + 0.45); e.gain.linearRampToValueAtTime(g * 0.8, tk + len * 0.7); e.gain.exponentialRampToValueAtTime(0.0001, tk + len);
+    const vib = ctx.createOscillator(); vib.frequency.value = 4.5 + Math.random() * 2; const vg = ctx.createGain(); vg.gain.value = 16; vib.connect(vg);
+    [['sawtooth', 1, fl], ['sine', 2, h2]].forEach(([ty, m, dst]) => { const o = ctx.createOscillator(); o.type = ty; const f = base * m;
+      o.frequency.setValueAtTime(f * 0.76, tk); o.frequency.linearRampToValueAtTime(f * 1.2, tk + 0.55); o.frequency.linearRampToValueAtTime(f * 1.14, tk + len * 0.65); o.frequency.exponentialRampToValueAtTime(f * 0.6, tk + len);
+      vg.connect(o.detune); o.connect(dst); o.start(tk); o.stop(tk + len + 0.05); });
+    fl.connect(lp); h2.connect(lp); lp.connect(e).connect(out(1, s.pan)); vib.start(tk); vib.stop(tk + len + 0.05); };
+  // throaty snarl: buzzy saw chopped by a fast square flutter, plus gritty breath through a mouth formant
+  const snarl = (t, s, dur, g) => { const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(125 + Math.random() * 30, t); o.frequency.linearRampToValueAtTime(175, t + dur * 0.45); o.frequency.linearRampToValueAtTime(110, t + dur);
+    const am = ctx.createOscillator(); am.type = 'square'; am.frequency.value = 24 + Math.random() * 12; const amG = ctx.createGain(); amG.gain.value = 0.5; const vca = ctx.createGain(); vca.gain.value = 0.5; am.connect(amG).connect(vca.gain);
+    const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 720; f.Q.value = 1.3; const e = ctx.createGain(); env(e, t, 0.05, g, dur);
+    o.connect(vca).connect(f).connect(e).connect(out(1, s.pan)); o.start(t); am.start(t); o.stop(t + dur + 0.05); am.stop(t + dur + 0.05);
+    noiseBurst({ t, dur, type: 'bandpass', freq: 1100, q: 1.2, gain: g * 0.6, attack: 0.05, pan: s.pan }); };
+  const jawSnap = (t, s, g) => { noiseBurst({ t, dur: 0.025, type: 'highpass', freq: 2500, gain: g, pan: s.pan }); tone({ t, f0: 1400, f1: 500, dur: 0.04, gain: g * 0.5, type: 'triangle', pan: s.pan }); noiseBurst({ t: t + 0.06, dur: 0.02, type: 'highpass', freq: 3200, gain: g * 0.5, pan: s.pan }); };
+  on('wolfHowl', (d) => { const s = where(d, 110), t = now(), base = 410 + Math.random() * 120, g = 0.025 + 0.08 * s.vol;
+    wolfVoice(t, base, s, 2.3 + Math.random() * 1.1, g); const n = Math.random() < 0.65 ? 2 : 1; // the pack joins in
+    for (let k = 0; k < n; k++) wolfVoice(t + 0.45 + k * 0.7 + Math.random() * 0.5, base * (1.07 + 0.11 * k + Math.random() * 0.05), { ...s, pan: clamp(s.pan + (Math.random() - .5) * 0.5, -1, 1) }, 1.9 + Math.random(), g * 0.6); });
+  on('wolfBite', (d) => { const s = where(d, 40), t = now(); snarl(t, s, 0.32, 0.1 + 0.12 * s.vol); jawSnap(t + 0.28, s, 0.18 + 0.15 * s.vol); });
+  for (const ev of ['wolfSnarl', 'wolfGrowl']) on(ev, (d) => { const s = where(d, 40); snarl(now(), s, 0.6 + Math.random() * 0.4, 0.05 + 0.11 * s.vol); });
+  on('wolfHurt', (d) => { const s = where(d, 50), t = now(), g = 0.05 + 0.1 * s.vol; // two sharp yelps
+    for (const [dt, a, b] of [[0, 850, 1500], [0.19, 920, 1300]]) { tone({ t: t + dt, type: 'triangle', f0: a, f1: b, dur: 0.06, gain: g, pan: s.pan, filter: 3000 }); tone({ t: t + dt + 0.06, type: 'triangle', f0: b, f1: a * 0.6, dur: 0.12, gain: g * 0.9, pan: s.pan, filter: 3000 }); }
+    noiseBurst({ t, dur: 0.09, type: 'bandpass', freq: 700, q: 1, gain: g, pan: s.pan, buf: brown }); });
+  on('wolfDie', (d) => { const s = where(d, 50), t = now(), g = 0.04 + 0.08 * s.vol; // falling whimper, then the body hits the ground
+    const o = tone({ t, type: 'triangle', f0: 1150, f1: 430, dur: 1.0, gain: g, attack: 0.03, pan: s.pan, filter: 2400 }); const lfo = ctx.createOscillator(); lfo.frequency.value = 7; const lg = ctx.createGain(); lg.gain.value = 40; lfo.connect(lg).connect(o.detune); lfo.start(t); lfo.stop(t + 1.1);
+    tone({ t: t + 0.75, f0: 85, f1: 40, dur: 0.3, gain: 0.12 + 0.2 * s.vol, pan: s.pan }); noiseBurst({ t: t + 0.75, dur: 0.3, freq: 320, gain: 0.08 + 0.15 * s.vol, pan: s.pan, buf: brown }); });
+  // big roars: stacked saws sliding down with a growling detune wobble, a breath band and optional sub
+  const bigRoar = (s, freqs, dur, g, sub) => { const t = now();
+    for (const f of freqs) { const o = tone({ t, type: 'sawtooth', f0: f * 0.92, f1: f * 0.55, dur, gain: g, filter: s.behind ? 520 : 880, q: 2.5, attack: 0.12, pan: s.pan }); const lfo = ctx.createOscillator(); lfo.frequency.value = 7 + Math.random() * 5; const lg = ctx.createGain(); lg.gain.value = 45; lfo.connect(lg).connect(o.detune); lfo.start(t); lfo.stop(t + dur + 0.1); }
+    noiseBurst({ t, dur: dur * 0.9, type: 'bandpass', freq: 520, q: 0.8, gain: g * 1.8, attack: 0.1, pan: s.pan });
+    if (sub) tone({ t, f0: sub, f1: sub * 0.7, dur: dur * 0.85, gain: g * 2, attack: 0.15 }); };
+  on('grayBearRoar', (d) => { killBirds(25, 'grayRoar'); const s = where(d, 60); bigRoar(s, [74, 98, 131], 1.9, 0.07 + 0.1 * s.vol, 46); });
+  on('alphaRoar', (d) => { killBirds(40, 'alpha'); const s = where(d, 80); bigRoar(s, [52, 69, 92, 123], 2.8, 0.08 + 0.09 * s.vol, 34);
+    noiseBurst({ t: now() + 0.05, dur: 2.4, freq: 180, gain: 0.25, attack: 0.3, buf: brown, pan: s.pan }); G.controls.shake = Math.max(G.controls.shake || 0, 0.25 * (0.4 + 0.6 * s.vol)); });
+  // glassy bell: inharmonic partials, fast attack, long ring
+  const bell = (t, f, g, dur = 1.4, pan = 0) => { for (const [r, gg, dd] of [[1, 1, 1], [2, 0.25, 0.7], [2.76, 0.3, 0.45], [5.4, 0.12, 0.25]]) tone({ t, f0: f * r, dur: dur * dd, gain: g * gg, attack: 0.003, pan }); };
+  on('keyPickup', () => { const t = now(); [1318.5, 1661.2, 1975.5, 2637].forEach((f, i) => bell(t + i * 0.085, f, 0.045 - i * 0.006, 1.7, (i - 1.5) * 0.25));
+    noiseBurst({ t, dur: 1.2, type: 'highpass', freq: 7000, gain: 0.02, attack: 0.3 }); tone({ t, f0: 330, f1: 660, dur: 0.5, gain: 0.04, type: 'triangle', attack: 0.02 }); });
+  on('caveUnlocked', (d) => { const s = where(d, 40), t = now(), g = 0.5 + 0.5 * s.vol;
+    for (const [dt, f] of [[0, 2300], [0.12, 2650], [0.36, 1700]]) { noiseBurst({ t: t + dt, dur: 0.02, type: 'highpass', freq: 3000, gain: 0.08 * g, pan: s.pan }); for (const r of [1, 1.58, 2.37, 3.1]) tone({ t: t + dt, f0: f * r, dur: 0.18 / r + 0.05, gain: 0.02 * g / r, pan: s.pan }); } // key turns, shackle snaps
+    for (let i = 0; i < 9; i++) { const tt = t + 0.45 + i * 0.045 + Math.random() * 0.03; tone({ t: tt, f0: 2800 + Math.random() * 2200, dur: 0.05, gain: 0.014 * g, pan: s.pan }); noiseBurst({ t: tt, dur: 0.012, type: 'highpass', freq: 4000, gain: 0.03 * g, pan: s.pan }); } // chain rattles off
+    tone({ t: t + 0.9, f0: 90, f1: 42, dur: 0.45, gain: 0.32 * g, pan: s.pan }); noiseBurst({ t: t + 0.9, dur: 0.35, freq: 500, gain: 0.22 * g, buf: brown, pan: s.pan }); // plank bar thrown down
+    const cr = tone({ t: t + 1.25, type: 'sawtooth', f0: 170, f1: 120, dur: 1.1, gain: 0.03 * g, filter: 1300, q: 5, attack: 0.15, pan: s.pan }); const jit = ctx.createOscillator(); jit.type = 'square'; jit.frequency.value = 23; const jg = ctx.createGain(); jg.gain.value = 300; jit.connect(jg).connect(cr.detune); jit.start(t + 1.25); jit.stop(t + 2.4); // dry hinge
+    noiseBurst({ t: t + 1.2, dur: 2.5, freq: 260, gain: 0.1 * g, attack: 0.8, buf: brown, pan: s.pan }); tone({ t: t + 1.1, f0: 55, f1: 52, dur: 2.6, gain: 0.05, attack: 0.6 }); }); // cold air from the dark
+  // brass-ish horn: two detuned saws through a lowpass that opens on the attack
+  const horn = (t, f, dur, g, pan = 0) => { const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 1.2; lp.frequency.setValueAtTime(250, t); lp.frequency.linearRampToValueAtTime(f * 5, t + 0.12); lp.frequency.setTargetAtTime(f * 3, t + 0.15, 0.3);
+    const e = ctx.createGain(); e.gain.setValueAtTime(0.0001, t); e.gain.exponentialRampToValueAtTime(g, t + 0.1); e.gain.setTargetAtTime(g * 0.7, t + 0.12, 0.3); e.gain.setTargetAtTime(0.0001, t + Math.max(0.2, dur - 0.25), 0.12);
+    for (const dt of [-7, 6]) { const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = dt; o.connect(lp); o.start(t); o.stop(t + dur + 0.5); }
+    lp.connect(e).connect(out(1, pan)); };
+  on('fireLevelUp', (d) => { const lvl = (d && d.level) || 2, s = spatial(G.campfire.x, G.campfire.z, 70), t = now(), g = 0.4 + 0.6 * s.vol;
+    noiseBurst({ t, dur: 1.8, type: 'bandpass', freq: 170, sweepTo: 2400, q: 0.6, gain: 0.32 * g, attack: 0.5, pan: s.pan, buf: brown }); // whoosh as it flares
+    noiseBurst({ t: t + 0.4, dur: 1.5, type: 'lowpass', freq: 700, gain: 0.22 * g, attack: 0.2, buf: brown, pan: s.pan }); tone({ t, f0: 40, f1: 72, dur: 2, gain: 0.22 * g, attack: 0.4 });
+    for (let i = 0; i < 24; i++) crackleAt(t + 0.3 + Math.random() * 1.8, 1); popAt(t + 0.5, 1, lvl); popAt(t + 1.1, 1, lvl);
+    const root = [196, 196, 220, 246.9, 261.6, 293.7][Math.min(5, lvl)]; // a warm major swell, one step higher each level
+    for (const [r, dt] of [[1, 0.45], [1.26, 0.6], [1.5, 0.75], [2, 0.9]]) horn(t + dt, root * r, 2.6, 0.028); });
+  on('regionUnlocked', () => { const t = now();
+    for (let i = 0; i < 14; i++) tone({ t: t + i * 0.07, f0: 98, f1: 82, dur: 0.25, gain: 0.04 + i * 0.008, attack: 0.004 }); // timpani roll
+    for (const [dt, f, dur] of [[1.0, 220, 0.24], [1.2, 293.7, 0.24], [1.4, 370, 0.24], [1.6, 440, 0.95], [2.6, 392, 0.3], [2.9, 440, 0.3]]) horn(t + dt, f, dur, 0.05, 0.1);
+    for (const f of [293.7, 370, 440, 587.3]) horn(t + 3.2, f, 3, 0.035, (f - 440) / 600); tone({ t: t + 3.2, f0: 73.4, f1: 60, dur: 1.2, gain: 0.35 });
+    noiseBurst({ t: t + 3.2, dur: 3, type: 'highpass', freq: 6000, gain: 0.05, attack: 0.02 }); stinger([146.8, 220], 5, 0.03, 'triangle', 2000); });
+  on('animalFlee', (d) => { const type = String((d && d.type) || '').toLowerCase(), s = where(d, 45), t = now(); if (s.vol <= 0.01) return;
+    if (/bird|owl|crow|raven/.test(type)) { const owlT = type.includes('owl'), n = owlT ? 6 : 9 + (Math.random() * 5 | 0); let tt = t, g = (owlT ? 0.05 : 0.07) * (0.3 + 0.7 * s.vol);
+      for (let i = 0; i < n; i++) { noiseBurst({ t: tt, dur: owlT ? 0.09 : 0.045, type: 'bandpass', freq: (owlT ? 450 : 850) + Math.random() * 500, q: 0.9, gain: g, attack: 0.008, pan: clamp(s.pan + (Math.random() - .5) * 0.2, -1, 1), buf: owlT ? brown : null }); tt += (owlT ? 0.16 : 0.07) + Math.random() * 0.03; g *= 0.86; } // wingbeats climbing away
+      if (!owlT && Math.random() < 0.7) for (let i = 0; i < 3; i++) tone({ t: t + 0.05 + i * 0.09, f0: 3200 + Math.random() * 600, f1: 2600, dur: 0.06, gain: 0.02 * (0.3 + 0.7 * s.vol), pan: s.pan, bus: birdBus }); // alarm chirps
+      return; }
+    const heavy = /stag|elk|deer|goat|bear|boar/.test(type); let tt = t, g = 1; // a dash through the undergrowth, receding
+    for (let i = 0; i < (heavy ? 6 : 8); i++) { noiseBurst({ t: tt, dur: heavy ? 0.12 : 0.07, freq: heavy ? 320 : 600, gain: (heavy ? 0.12 : 0.07) * s.vol * g + 0.01, pan: s.pan, buf: brown, rate: heavy ? 0.9 : 1.4 }); noiseBurst({ t: tt + 0.01, dur: 0.09, type: 'bandpass', freq: 2200 + Math.random() * 1500, q: 1, gain: 0.04 * s.vol * g, pan: s.pan }); tt += (heavy ? 0.2 : 0.11) + Math.random() * 0.05; g *= 0.82; }
+    if (/stag|elk/.test(type)) noiseBurst({ t, dur: 0.25, type: 'bandpass', freq: 420, q: 2, gain: 0.12 * s.vol + 0.02, attack: 0.02, pan: s.pan }); // alarm snort
+    if (/goat/.test(type)) { for (let i = 0; i < 4; i++) noiseBurst({ t: t + i * 0.13, dur: 0.02, type: 'bandpass', freq: 2400, q: 4, gain: 0.08 * s.vol, pan: s.pan }); const b = tone({ t: t + 0.2, type: 'sawtooth', f0: 520, f1: 470, dur: 0.45, gain: 0.03 * s.vol, filter: 1800, attack: 0.03, pan: s.pan }); const l = ctx.createOscillator(); l.frequency.value = 9; const lg = ctx.createGain(); lg.gain.value = 60; l.connect(lg).connect(b.detune); l.start(t + 0.2); l.stop(t + 0.7); } // hooves on rock + bleat
+    if (/fox/.test(type) && Math.random() < 0.5) tone({ t: t + 0.1, type: 'triangle', f0: 900, f1: 1300, dur: 0.09, gain: 0.04 * s.vol, pan: s.pan }); });
+  on('owlHoot', (d) => { const s = where(d, 60); owl(s.pan, 0.4 + 1.2 * s.vol); });
 
   // line-of-sight: how many standing tree trunks sit between the camera and a world point (2D segment test)
   const occluders = (x, z) => {
@@ -231,12 +354,24 @@ export function createAudio(G) {
     windGain.gain.setTargetAtTime((0.03 + 0.04 * gust + dark * 0.025) * duck, t, 0.35);
     windFilter.frequency.setTargetAtTime(260 + 300 * (0.5 + 0.5 * Math.sin(t * 0.17)) + gust * 120, t, 0.8);
     rustleGain.gain.setTargetAtTime(Math.max(0, gust - 0.45) * 0.03 * duck, t, 0.4);
-    // fire: distance + direction, fades with fuel, muffled behind you
-    const fire = G.campfire, fs = spatial(fire.x, fire.z, 24), ff = spatial(fire.x, fire.z, 70);
-    const fv = fire.fuel > 0 ? Math.max(fs.vol, ff.vol * 0.12) * (0.4 + Math.min(1, fire.fuel / 50) * 0.6) : 0; A.fireVol = fv; if (fs.vol <= 0) fs.pan = ff.pan;
-    fireGain.gain.setTargetAtTime(fv * 0.14 * (0.45 + 0.55 * duck), t, 0.2); firePan.pan.setTargetAtTime(clamp(fs.pan, -1, 1) * 0.7, t, 0.1);
-    fireFilter.frequency.setTargetAtTime(fs.behind ? 280 : 420, t, 0.3);
-    if (t > nextCrackle) { nextCrackle = t + 0.04 + Math.random() * 0.2; if (fv > 0.02) { noiseBurst({ dur: 0.008 + Math.random() * 0.03, type: 'highpass', freq: 1500 + Math.random() * 3000, gain: fv * (0.05 + Math.random() * 0.2), pan: clamp(fs.pan * 0.7 + (Math.random() - .5) * 0.25, -1, 1) }); if (Math.random() < 0.06) noiseBurst({ dur: 0.05, type: 'bandpass', freq: 700, q: 2, gain: fv * 0.25, pan: fs.pan * 0.7 }); } }
+    // fire: distance + direction + fuel + fire level. Beds breathe; crackles/pops are Poisson-timed and scheduled
+    // ~150 ms ahead at exact context times (clustered like real wood), never more than the lookahead window per frame
+    const fire = G.campfire, fs = spatial(fire.x, fire.z, 48), lvl = clamp(G.progression?.fireLevel || 1, 1, 6);
+    const fuelK = fuelKOf(fire.fuel), fall = fireFall(fs.dist), fv = fall * fuelK, lk = 1 + 0.22 * (lvl - 1), flare = fire.flare || 0; A.fireVol = fv;
+    Object.assign(fireStats, { dist: fs.dist, fall, fuelK, level: lvl });
+    fireBus.gain.setTargetAtTime(fv * (0.6 + 0.4 * duck), t, 0.15);
+    firePan.pan.setTargetAtTime(clamp(fs.pan, -1, 1) * 0.75 * clamp((fs.dist - 0.8) / 3, 0, 1), t, 0.1); // centred when you stand over it
+    fireMuffle.frequency.setTargetAtTime((fs.behind ? 0.45 : 1) * (1600 + 10400 * clamp(1 - fs.dist / 40, 0, 1) ** 2), t, 0.25);
+    fireFilter.frequency.setTargetAtTime(230 + 60 * lvl + 220 * fuelK + 300 * flare, t, 0.3);
+    if (t > nextRoar) { nextRoar = t + 0.12 + Math.random() * 0.4; const breath = 0.6 + Math.random() * 0.8;
+      fireGain.gain.setTargetAtTime(0.22 * lk * (0.45 + 0.55 * fuelK) * breath * (1 + flare), t, 0.14);
+      flutterGain.gain.setTargetAtTime(0.06 * fuelK * lk * (0.25 + Math.random()) * (1 + flare), t, 0.07);
+      hissGain.gain.setTargetAtTime(0.014 * fuelK * (0.5 + Math.random()), t, 0.2); }
+    const crackOn = fire.fuel > 0 && fv > 0.002, rate = (3 + 11 * fuelK) * (1 + 0.25 * (lvl - 1)) * (1 + 2.5 * flare); fireStats.rate = crackOn ? rate : 0;
+    if (nextCrackle < t) nextCrackle = t + Math.random() * 0.03;
+    while (nextCrackle < t + 0.15) { if (crackOn) crackleAt(nextCrackle, fuelK); nextCrackle += -Math.log(1 - Math.random()) / rate; }
+    if (nextPop < t) nextPop = t + Math.random() * 0.4;
+    while (nextPop < t + 0.15) { if (crackOn) popAt(nextPop, fuelK, lvl); nextPop += -Math.log(1 - Math.random()) / ((0.2 + 0.45 * fuelK) * lk * (1 + flare)); }
     // music-ish beds: warm day pad vs. night drone that swells with danger
     A.threat = G.threat || 0;
     // ---- stalking dread: starts the moment a creature is hunting you, mapped to state + distance (out to ~55m), not just to charge threat
@@ -261,8 +396,9 @@ export function createAudio(G) {
     const target = playing ? Math.max(dd, bd, A.threat, lowHp, starve) : 0, cur = A.dread || 0;
     A.dread = cur + (target - cur) * Math.min(1, dt * (target > cur ? 1.8 : 0.5));
     const D = A.dread;
-    dayPadGain.gain.setTargetAtTime(playing ? (1 - dark) * 0.006 * duck : 0.004, t, 1.5);
-    droneGain.gain.setTargetAtTime(dark * (0.018 + D * 0.06) + (playing && fire.fuel <= 0 && dark > 0.5 ? 0.03 : 0), t, 0.8);
+    const scored = !!(G.music && G.music.active); // music.js owns the harmony: the A-major pad would clash with its keys
+    dayPadGain.gain.setTargetAtTime(scored ? 0 : playing ? (1 - dark) * 0.006 * duck : 0.004, t, 1.5);
+    droneGain.gain.setTargetAtTime((dark * (0.018 + D * 0.06) + (playing && fire.fuel <= 0 && dark > 0.5 ? 0.03 : 0)) * (scored ? 0.55 : 1), t, 0.8);
     droneFilter.frequency.setTargetAtTime(140 + 120 * (0.5 + 0.5 * Math.sin(t * 0.09)) + D * 520, t, 0.6);
     const tPulse = 0.8 + 0.2 * Math.sin(t * Math.PI * 2 * (0.5 + D * 1.5)); A.tensionTarget = playing && D > 0.08 ? (0.05 + Math.pow(D, 0.9) * 0.17) * tPulse : 0;
     tensionGain.gain.setTargetAtTime(A.tensionTarget, t, 0.25); tensionFilter.frequency.setTargetAtTime(600 + D * 1400, t, 0.8); tensionFilter.Q.value = 0.5;
@@ -318,9 +454,9 @@ export function createAudio(G) {
     if (playing && bearMovingNow && bear.state !== 'charge' && bDist < 50 && t > nextBearStep) { nextBearStep = t + clamp(1.6 / Math.max(bearV, 0.8), 0.3, 1.6) + Math.random() * 0.25; note('bearStep'); rustle(bear.pos.x, bear.pos.z, true, 50, 0); }
     if (!bearMovingNow) nextBearStep = Math.max(nextBearStep, t + 0.25); // first step lands a beat after it starts moving
     // heartbeat (lub-dub): starts quietly as soon as stalking begins (dread), speeds up / swells as it closes in
-    A.bpm = 0;
+    A.bpm = 0; A.nextBeatAt = 0;
     if (playing && D > 0.12) { const bpm = 56 + D * 100; A.bpm = Math.round(bpm);
-      if (t > nextBeat) { nextBeat = t + 60 / bpm; const g = 0.12 + D * 0.4, body = 0.1 + D * 0.34;
+      if (t + 0.04 > nextBeat) { const t = Math.max(now(), nextBeat); nextBeat = t + 60 / bpm; const g = 0.12 + D * 0.4, body = 0.1 + D * 0.34; // beats land on exact times, so music.js can lock its hits to them
         const beat = (tt, f, gg, bb) => {
           // sub (chest weight on headphones)
           const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(f, tt); o.frequency.exponentialRampToValueAtTime(f * 0.65, tt + 0.13); const e = ctx.createGain(); env(e, tt, 0.008, gg, 0.16); o.connect(e).connect(hbFilter); o.start(tt); o.stop(tt + 0.2);
@@ -330,7 +466,8 @@ export function createAudio(G) {
           // soft knock transient (thud onset) around 400Hz
           noiseBurst({ t: tt, dur: 0.035, type: 'bandpass', freq: 380, q: 1.4, gain: bb * 0.9 });
           const o2 = ctx.createOscillator(); o2.type = 'triangle'; o2.frequency.setValueAtTime(f * 2, tt); const e2 = ctx.createGain(); env(e2, tt, 0.005, gg * 0.25, 0.08); o2.connect(e2).connect(master); o2.start(tt); o2.stop(tt + 0.1); };
-        beat(t, 60, g, body); beat(t + 0.19 - D * 0.04, 52, g * 0.7, body * 0.72); A.lastBeat = { t: +t.toFixed(2), sub: +g.toFixed(3), body: +body.toFixed(3), bodyHz: [312, 156] }; A.beats = (A.beats || 0) + 1; } }
+        beat(t, 60, g, body); beat(t + 0.19 - D * 0.04, 52, g * 0.7, body * 0.72); A.lastBeat = { t: +t.toFixed(2), sub: +g.toFixed(3), body: +body.toFixed(3), bodyHz: [312, 156] }; A.beats = (A.beats || 0) + 1; }
+      A.nextBeatAt = nextBeat; }
   };
 
   // debug snapshot for critics (they cannot hear): proves context running + spatial gains moving
@@ -339,9 +476,13 @@ export function createAudio(G) {
     started: A.started, ctxState: ctx.state, muted: A.muted, time: r3(ctx.currentTime), threat: r3(A.threat), dread: r3(A.dread || 0), deerStill: !!A.deerStill, bear: { moving: !!A.bearMoving, v: r3(A.bearV || 0), prox15: r3(A.bearProx || 0), breath: A.bearBreath || 0 }, birdsOk: A.birdsOk !== false, birdBusTarget: A.birdBusT ?? 1, bearBreathTarget: A.bearBreath || 0, threatHold: r3(Math.max(0, threatHold - (ctx ? ctx.currentTime : 0))), fireVol: r3(A.fireVol || 0), heartBpm: A.bpm || 0, beats: A.beats || 0, duck: r3(A.duck ?? 1), tensionTarget: r3(A.tensionTarget || 0), lastBeat: A.lastBeat || null,
     deerLOS: { dist: r3(vis.dist), inView: vis.inView, occluders: vis.occ, visible: vis.visible, range: r3(vis.range), stingArmed: deerStingArmed, stingPending: r3(stingPending), readable: read.why, readDist: r3(read.dist), lastSting: r3(lastSting) },
     beds: { wind: r3(windGain.gain.value), rustle: r3(rustleGain.gain.value), fire: r3(fireGain.gain.value), firePan: r3(firePan.pan.value), drone: r3(droneGain.gain.value), tension: r3(tensionGain.gain.value), dayPad: r3(dayPadGain.gain.value) },
+    fire: A.fireState(),
     loops: Object.fromEntries(Object.entries(loops).map(([k, l]) => [k, { gain: r3(l.g.gain.value), pan: r3(l.p.pan.value), muffle: Math.round(l.mf.frequency.value) }])),
     counts: { ...A.counts }, recent: A.log.slice(-10).map(e => e.ev),
   }) : { started: false, ctxState: 'none (needs first click/key)' };
+  // fire debug: live bus gains, and the pure distance curve (what the bus gain would be at distance d)
+  A.fireState = () => ctx && fireBus ? { dist: r3(fireStats.dist), fall: r3(fireStats.fall), fuelK: r3(fireStats.fuelK), level: fireStats.level, busGain: r3(fireBus.gain.value), roar: r3(fireGain.gain.value), flutter: r3(flutterGain.gain.value), hiss: r3(hissGain.gain.value), muffleHz: Math.round(fireMuffle.frequency.value), pan: r3(firePan.pan.value), cracklesPerSec: r3(fireStats.rate), crackles: fireStats.crackles, pops: fireStats.pops, sizzles: fireStats.sizzles } : null;
+  A.fireGainAt = (d, fuel = G.campfire.fuel) => r3(fireFall(d) * fuelKOf(fuel));
   A.start = start;
   window.__audio = A;
   return A;

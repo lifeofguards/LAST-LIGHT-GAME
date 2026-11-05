@@ -66,7 +66,7 @@ void main(){
 
 export function createCampfire(G) {
   const { scene } = G;
-  const fire = { x: 0, z: 0, fuel: 70, maxFuel: 100, logValue: 22, flare: 0 };
+  const fire = { x: 0, z: 0, fuel: 70, maxFuel: 100, logValue: 22, flare: 0, level: 1 }; // level: fire level 1-4 (progression.js feeds it)
   const root = new THREE.Group(); scene.add(root);
   const P0 = () => G.controls.pos;
 
@@ -77,6 +77,26 @@ export function createCampfire(G) {
     s.position.set(Math.cos(a) * 1.18, 0.14, Math.sin(a) * 1.18); s.scale.set(1.1, 0.72, 0.9 + (i % 3) * 0.1); s.rotation.set(a, a * 2, 0); s.castShadow = true; root.add(s);
   }
   const bark = new THREE.MeshLambertMaterial({ color: '#4d3320', flatShading: true });
+  // ---------- fire levels: the pit grows as the fire levels up ----------
+  // L2: a second, stacked stone course · L3: a paved hearth ring · L4: four standing stones with ember-lit cracks
+  const tiers = [null, new THREE.Group(), new THREE.Group(), new THREE.Group()];
+  for (let i = 1; i < 4; i++) { tiers[i].visible = false; root.add(tiers[i]); }
+  const runeMat = new THREE.MeshBasicMaterial({ color: '#ff8a2a', toneMapped: false });
+  { const hearth = new THREE.MeshLambertMaterial({ color: '#5d5a55', flatShading: true });
+    for (let i = 0; i < 9; i++) { const a = i / 9 * Math.PI * 2 + 0.17, s = new THREE.Mesh(new THREE.DodecahedronGeometry(0.3, 0), stoneMat);
+      s.position.set(Math.cos(a) * 1.22, 0.4, Math.sin(a) * 1.22); s.scale.set(1.05, 0.62, 0.85); s.rotation.set(a * 1.3, a, 0.3); s.castShadow = true; tiers[1].add(s); }
+    for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2, s = new THREE.Mesh(new THREE.DodecahedronGeometry(0.42, 0), hearth);
+      s.position.set(Math.cos(a) * 2.05, 0.03, Math.sin(a) * 2.05); s.scale.set(1.15, 0.16, 0.9); s.rotation.set(0, -a, 0); s.receiveShadow = true; tiers[2].add(s); }
+    for (let i = 0; i < 4; i++) { const a = i / 4 * Math.PI * 2 + Math.PI / 4, g = new THREE.Group(); g.position.set(Math.cos(a) * 3.0, 0, Math.sin(a) * 3.0); g.rotation.y = -a;
+      const st = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.7, 0.4), stoneMat); st.position.y = 0.85; st.rotation.z = 0.05 * (i % 2 ? 1 : -1); st.castShadow = true; g.add(st);
+      const cap = new THREE.Mesh(new THREE.DodecahedronGeometry(0.33, 0), stoneMat); cap.position.y = 1.75; cap.scale.set(1, 0.5, 0.8); g.add(cap);
+      for (const [y, h] of [[0.55, 0.32], [1.05, 0.22], [1.38, 0.14]]) { const r = new THREE.Mesh(new THREE.BoxGeometry(0.08, h, 0.03), runeMat); r.position.set(0, y, -0.21); g.add(r); }
+      tiers[3].add(g); g.userData.coll = { x: g.position.x, z: g.position.z, r: 0.35 }; }
+  }
+  // shockwave ring that rolls out across the ground on a level-up
+  const waveMat = new THREE.MeshBasicMaterial({ color: '#ffc457', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+  const wave = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 64).rotateX(-Math.PI / 2), waveMat); wave.position.y = 0.12; wave.visible = false; root.add(wave);
+  let waveT = -1;
   // charred wood: near-black, matte, lit only dimly by the flames; a faint ember glow that dies with the fire
   const charMat = new THREE.MeshLambertMaterial({ color: '#120b07', flatShading: true, emissive: '#6a1a04', emissiveIntensity: 0.35 });
   const charMat2 = new THREE.MeshLambertMaterial({ color: '#1a110b', flatShading: true, emissive: '#6a1a04', emissiveIntensity: 0.2 });
@@ -169,6 +189,8 @@ export function createCampfire(G) {
       mx.save(); mx.translate(32, 32); mx.fillStyle = '#ff7a2a'; mx.beginPath(); mx.moveTo(0, -17); mx.bezierCurveTo(8, -6, 13, 0, 12, 8); mx.bezierCurveTo(10, 18, -10, 18, -12, 8); mx.bezierCurveTo(-13, 0, -6, -4, 0, -17); mx.fill();
       mx.fillStyle = '#ffd060'; mx.beginPath(); mx.moveTo(0, -3); mx.bezierCurveTo(5, 3, 7, 6, 6, 10); mx.bezierCurveTo(4, 15, -4, 15, -6, 10); mx.bezierCurveTo(-6, 6, -3, 3, 0, -3); mx.fill(); mx.restore();
     } else { mx.fillStyle = '#ff5040'; mx.font = 'bold 22px sans-serif'; mx.textAlign = 'center'; mx.textBaseline = 'middle'; mx.fillText('OUT', 32, 33); }
+    if (fire.level > 1) { mx.beginPath(); mx.arc(46, 46, 10, 0, Math.PI * 2); mx.fillStyle = '#ffc247'; mx.fill(); mx.lineWidth = 2; mx.strokeStyle = 'rgba(15,10,8,0.9)'; mx.stroke();
+      mx.fillStyle = '#2a1608'; mx.font = 'bold 14px sans-serif'; mx.textAlign = 'center'; mx.textBaseline = 'middle'; mx.fillText(String(fire.level), 46, 47); }
     rr(58, 22, 180, 20, 10); mx.fillStyle = 'rgba(255,255,255,0.12)'; mx.fill();
     if (fuel > 0) {
       const w = Math.max(20, 180 * fuel / 100); rr(58, 22, w, 20, 10);
@@ -197,7 +219,7 @@ export function createCampfire(G) {
 
   G.world.addCollider({ x: 0, z: 0, r: 1.1 });
 
-  fire.lightRadius = () => fire.fuel > 0 ? 4 + fire.fuel * 0.13 : 0;       // safe-zone radius
+  fire.lightRadius = () => fire.fuel > 0 ? 4 + fire.fuel * 0.13 + (fire.level - 1) * 1.3 : 0;       // safe-zone radius (a bigger fire lights a bit more ground)
   fire.inLight = (p, pad = 0) => Math.hypot(p.x - fire.x, p.z - fire.z) < fire.lightRadius() - pad;
   fire.feed = () => {
     const inv = G.survival.inventory; if (inv.logs <= 0) return false;
@@ -210,12 +232,28 @@ export function createCampfire(G) {
     if (d > 2.6) return null;
     const logs = G.survival.inventory.logs;
     if (logs > 0) {
-      if (fire.fuel >= fire.maxFuel - 1) return { dist: d, label: 'The fire is roaring — full!', disabled: true, action: () => {} };
-      return { dist: d, label: `[E] ${fire.fuel <= 0 ? 'Relight the fire' : 'Add log to fire'} (${Math.round(fire.fuel)}%)`, action: fire.feed };
+      const lv = G.progression && G.progression.levelInfo ? G.progression.levelInfo() : null, xp = lv && !lv.max ? ` · ${lv.left} more to Lv ${lv.level + 1}` : '';
+      // a full fire still takes logs while it is levelling up (the extra wood stokes it toward the next level)
+      if (fire.fuel >= fire.maxFuel - 1) return lv && !lv.max ? { dist: d, label: `[E] Add log to fire (full)${xp}`, action: fire.feed } : { dist: d, label: 'The fire is roaring — full!', disabled: true, action: () => {} };
+      return { dist: d, label: `[E] ${fire.fuel <= 0 ? 'Relight the fire' : 'Add log to fire'} (${Math.round(fire.fuel)}%)${xp}`, action: fire.feed };
     }
     return { dist: d + 1, label: fire.fuel <= 0 ? 'The fire is out! Bring logs to relight it' : 'Fire needs logs — chop trees with the axe', disabled: true, action: () => {} };
   };
 
+  // level 1-4: show the pit tier, and on a real level-up flare hard, burst embers and roll a shockwave outward
+  const tierColl = [];
+  fire.setLevel = (n, celebrate = false) => {
+    fire.level = Math.max(1, Math.min(4, n | 0));
+    for (let i = 1; i < 4; i++) tiers[i].visible = fire.level > i;
+    for (const c of tierColl) G.world.removeCollider(c); tierColl.length = 0;
+    if (fire.level >= 4) for (const g of tiers[3].children) tierColl.push(G.world.addCollider({ ...g.userData.coll }));
+    lastDrawn = -1;
+    if (!celebrate) return;
+    fire.flare = 1.7; ringU.uPulse.value = 1; waveT = 0; wave.visible = true;
+    for (let k = 0; k < N; k++) { spawnEmber(k, true); ev[k].vy *= 1.6; ev[k].life += 0.6; }
+    for (let k = 0; k < NS; k++) puffs[k].life = Math.random() * 0.3;
+    G.events.emit('fireFlare');
+  };
   let t = 0, wasOut = false, visR = fire.lightRadius(), ringR = visR, sputter = 1, sputterT = 0;
   fire.update = (dt) => {
     t += dt;
@@ -238,8 +276,9 @@ export function createCampfire(G) {
     const k = Math.min(1, fire.fuel / 60);
     // flame body scales with fuel: tall yellow-orange blaze when full, low guttering orange tongues below 25%
     const hN = out ? 0 : Math.min(1, fire.fuel / 80);
-    const hgt = out ? 0 : (0.2 + Math.pow(hN, 1.3) * 2.3 + fire.flare * 0.8) * (0.8 + 0.2 * sputter);   // how high licks rise
-    const wid = out ? 0 : (0.42 + Math.min(1, fire.fuel / 60) * 0.95 + fire.flare * 0.35) * (0.85 + 0.15 * sputter);
+    const lvK = 1 + (fire.level - 1) * 0.1; // each fire level burns a little taller and wider
+    const hgt = out ? 0 : (0.2 + Math.pow(hN, 1.3) * 2.3 + fire.flare * 0.8) * (0.8 + 0.2 * sputter) * lvK;   // how high licks rise
+    const wid = out ? 0 : (0.42 + Math.min(1, fire.fuel / 60) * 0.95 + fire.flare * 0.35) * (0.85 + 0.15 * sputter) * (1 + (fire.level - 1) * 0.08);
     const hotK = out ? 0 : Math.min(1, Math.max(0, (fire.fuel - 8) / 40) + fire.flare);        // 0 = deep orange/red, 1 = yellow core
     const active = out ? 0 : Math.round(NF * Math.min(1, 0.4 + fire.fuel / 40 + fire.flare));   // fewer licks when low
     const spread = 0.14 + Math.min(1, fire.fuel / 60) * 0.34;
@@ -314,6 +353,10 @@ export function createCampfire(G) {
       if (mp && !out && night) { const dx = mp.x - fire.x, dz = mp.z - fire.z, md = Math.hypot(dx, dz); ang = Math.atan2(-dz, dx); str = Math.max(0, 1 - Math.abs(md - ringR) / 6); if (mons[i].root?.visible === false || mons[i].state === 'hidden' || mons[i].state === 'dead') str = 0; }
       ths[i].x = ang; ths[i].y += (str - ths[i].y) * Math.min(1, dt * 3);
     }
+
+    // level-up shockwave + ember-lit cracks in the standing stones
+    if (waveT >= 0) { waveT += dt / 1.8; const e = 1 - Math.pow(1 - Math.min(1, waveT), 3); wave.scale.setScalar(1.5 + e * 46); waveMat.opacity = (1 - Math.min(1, waveT)) * 0.85; if (waveT >= 1) { waveT = -1; wave.visible = false; } }
+    if (fire.level >= 4) runeMat.color.setRGB(1, 0.45 + 0.1 * Math.sin(t * 2.1), 0.12).multiplyScalar(out ? 0.15 : 0.55 + 0.45 * Math.min(1, fire.fuel / 40) * (0.85 + 0.15 * Math.sin(t * 7)));
 
     // embers
     for (let i = 0; i < N; i++) {

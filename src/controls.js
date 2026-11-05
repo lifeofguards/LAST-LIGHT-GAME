@@ -147,6 +147,7 @@ export function createControls(G) {
       if (!c.grounded) { if (c.vel.y < -4) { G.events.emit('land'); c.landT = Math.min(1, -c.vel.y / 12); } }
       c.pos.y = 0; c.vel.y = 0; c.grounded = true; c.airTime = 0;
     }
+    if (G.progression && G.progression.limitPlayer) G.progression.limitPlayer(c.pos, c.vel, dt); // soft push-back at the fog barrier
     G.world.collide(c.pos, 0.45);
     c.speed = Math.hypot(c.vel.x, c.vel.z);
     if (c.grounded && c.speed > 0.5) { c.stepDist += c.speed * dt; if (c.stepDist > (c.sprinting ? 2.1 : 1.6)) { c.stepDist = 0; G.events.emit('footstep', { sprint: c.sprinting }); } }
@@ -178,8 +179,9 @@ export function createControls(G) {
       c.pendingHit -= dt;
       if (c.pendingHit <= 0) {
         c.pendingHit = -1;
-        const hitBear = G.bear && G.bear.tryHit(c.pos, f);
-        if (!hitBear) { const t = G.world.findChopTarget(c.pos.x, c.pos.z, f.x, f.z); if (t) { G.world.hitTree(t, c.pos.x, c.pos.z); c.shake = Math.max(c.shake, 0.12); } }
+        // the brown bear first (unchanged), then any other creature in front (wolves, gray bears, the Alpha, game animals)
+        const hitBear = (G.bear && G.bear.tryHit(c.pos, f)) || (G.creatures && G.creatures.hitAt && G.creatures.hitAt(c.pos, f));
+        if (!hitBear) { const t = G.world.findChopTarget(c.pos.x, c.pos.z, f.x, f.z); if (t) { G.world.hitTree(t, c.pos.x, c.pos.z, (G.progression && G.progression.treeDamage) || 1); c.shake = Math.max(c.shake, 0.12); } }
         else c.shake = Math.max(c.shake, 0.18);
       }
     }

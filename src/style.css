@@ -203,3 +203,24 @@ body.cardup #treehp, body.cardup #itemname { opacity: 0 !important; }
 }
 
 #death p.best { font-size: 17px; margin: -18px 0 22px; color: #ffc46b; }
+/* ---- progression: fire level row, key slots, level-up card ---- */
+#fire .flv { display: flex; align-items: center; gap: 7px; margin-top: 2px; }
+#firelvb { font-size: 12px; font-weight: 700; letter-spacing: 1px; color: #2a1608; background: linear-gradient(180deg, #ffd36b, #ff9a2a); border-radius: 6px; padding: 1px 7px; box-shadow: 0 0 8px rgba(255,150,50,.45); white-space: nowrap; }
+#firepips { display: flex; gap: 3px; } #firepips i { width: 9px; height: 9px; border-radius: 50%; background: rgba(0,0,0,.5); border: 1px solid rgba(255,200,120,.35); }
+#firepips i.on { background: #ffb347; border-color: #ffe2a8; box-shadow: 0 0 5px rgba(255,170,60,.8); }
+#firelvl { margin-left: auto; font-size: 12px; font-weight: 700; color: #ffd9a0; white-space: nowrap; }
+#fire .xbar { height: 5px; border-radius: 3px; background: rgba(0,0,0,.5); overflow: hidden; margin-top: 3px; }
+#firexp { height: 100%; width: 0; background: linear-gradient(90deg, #ffb347, #fff0b0); transition: width .4s; }
+#firenext { font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 2px; white-space: nowrap; }
+#fire.maxlv #firelvl { color: #ffe27a; } #fire.maxlv #firexp { background: linear-gradient(90deg, #ffd24a, #fff6c8); }
+#fire.lvup { animation: lvup .65s ease-out 3; border-color: #ffd36b; }
+@keyframes lvup { 0% { transform: scale(1); box-shadow: 0 0 0 rgba(255,170,60,0); } 35% { transform: scale(1.07); box-shadow: 0 0 26px rgba(255,170,60,.85); } 100% { transform: scale(1); box-shadow: 0 0 0 rgba(255,170,60,0); } }
+#fire.lvup #firelvb { background: linear-gradient(180deg, #fff3c0, #ffc247); }
+#keys { position: absolute; top: 128px; right: 18px; display: flex; gap: 6px; }
+#keys .kslot { width: 46px; height: 50px; border-radius: 10px; background: var(--panel); border: 2px solid var(--stroke); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
+#keys .kslot svg { width: 26px; height: 26px; filter: drop-shadow(0 0 5px rgba(255,220,140,.55)); }
+#keys .kslot span { font-size: 10px; font-weight: 700; color: var(--muted); text-shadow: 0 1px 2px #000; }
+#keys .kslot.used { opacity: .5; } #keys .kslot.used svg { filter: grayscale(.6); }
+#keys .kslot.pop { animation: goalpop .5s ease-out; border-color: #ffe9a8; }
+#card.open h1 { color: #ffcf7a; text-shadow: 0 0 30px rgba(255,140,40,.55), 0 6px 30px rgba(0,0,0,.9); }
+#card.open p { color: #fff1d6; font-weight: 700; font-size: 22px; letter-spacing: 1px; text-shadow: 0 2px 3px #000, 0 0 14px rgba(0,0,0,.95), 0 0 30px rgba(0,0,0,.6); }

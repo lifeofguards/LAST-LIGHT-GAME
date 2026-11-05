@@ -130,7 +130,7 @@ export function createSurvival(G) {
     for (const b of W.bushes) if (!keep.has(b)) { scene.remove(b.group); b.group.visible = false; if (b.collider) W.removeCollider(b.collider); }
     W.bushes.splice(0, W.bushes.length, ...keep);
   }
-  for (const b of W.bushes) {
+  function initBush(b) {
     b.charges = BUSH_CHARGES; b.growT = 0; b.jiggle = 0; b.regrow = 1e9; b.ready = true; b.bare = 0;
     b.berryMeshes = [...b.berries.children]; b.berryMeshes.forEach(m => { m.userData.s = 1; m.userData.target = 1; m.userData.delay = 0; });
     b.leaf = b.group.children[0]; b.leaf.material = b.leaf.material.clone();
@@ -143,6 +143,36 @@ export function createSurvival(G) {
     }
     b.group.add(b.twigs);
   }
+  for (const b of W.bushes) initBush(b);
+  // new bushes sprout each dawn across the open land (fresh food every day, favouring the newest land)
+  const SPROUT_PER_DAWN = 3, BUSH_CAP = 30;
+  const tmplLeaf = W.bushes[0]?.leaf, tmplBerry = W.bushes[0]?.berryMeshes?.[0];
+  function sproutBush() {
+    if (!tmplLeaf || !tmplBerry || W.bushes.length >= BUSH_CAP) return null;
+    const lim = (G.progression?.limitR ?? 60) - 5, cx = G.campfire?.x || 0, cz = G.campfire?.z || 0;
+    const caves = G.creatures?.caves?.() || G.progression?.caves || [];
+    const minR = BUSH_MIN_R * 0.85, outer = lim > 70 && Math.random() < 0.65;
+    for (let tries = 0; tries < 40; tries++) {
+      const a = Math.random() * 6.28, r0 = outer ? Math.max(minR, lim - 30) : minR;
+      const r = Math.sqrt(r0 * r0 + Math.random() * Math.max(0, lim * lim - r0 * r0)), x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
+      if (W.trees.some(t => t.alive !== false && Math.hypot(t.x - x, t.z - z) < 2.4)) continue;
+      if (W.bushes.some(o => Math.hypot(o.x - x, o.z - z) < 7) || caves.some(c => Math.hypot(c.x - x, c.z - z) < 16)) continue;
+      const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = Math.random() * 6.28;
+      const leaf = new THREE.Mesh(tmplLeaf.geometry, tmplLeaf.material); leaf.castShadow = true; g.add(leaf);
+      const berries = new THREE.Group();
+      for (let k = 0; k < 10; k++) {
+        const bm = new THREE.Mesh(tmplBerry.geometry, tmplBerry.material), th = Math.random() * 6.28, ph = 0.3 + Math.random();
+        bm.position.set(Math.cos(th) * Math.sin(ph) * 0.8, 0.5 + Math.cos(ph) * 0.6, Math.sin(th) * Math.sin(ph) * 0.8); bm.rotation.set(Math.random(), Math.random(), 0); berries.add(bm);
+      }
+      g.add(berries); scene.add(g);
+      const b = { x, z, group: g, berries, ready: true, regrow: 0, collider: W.addCollider({ x, z, r: 0.7 }), sprouted: G.daynight?.day || 1 };
+      initBush(b); b.leaf.material.color.copy(LEAF_FULL);
+      b.sprout = 0; g.scale.setScalar(0.01);   // grows in over a couple of seconds
+      W.bushes.push(b); return b;
+    }
+    return null;
+  }
+  s.sproutBush = sproutBush;
   // one berry at a time: flies off the bush into the player's hands
   function flyBerry(m) {
     m.getWorldPosition(tmpW);
@@ -249,7 +279,10 @@ export function createSurvival(G) {
   G.events.on('dayStart', () => {
     let n = 0;
     for (const b of W.bushes) if (b.charges < BUSH_CHARGES) { b.charges = BUSH_CHARGES; b.growT = 0; bushVisual(b); b.jiggle = 0.3; n++; }
-    if (n) setTimeout(() => G.ui?.toast?.('The berry bushes have regrown overnight.', 2.5), 2600);
+    let k = 0; for (let i = 0; i < SPROUT_PER_DAWN; i++) if (sproutBush()) k++;
+    s.lastDawn = { refilled: n, sprouted: k, bushes: W.bushes.length };
+    const msg = n && k ? `The berry bushes have regrown overnight, and ${k} new ${k > 1 ? 'bushes have' : 'bush has'} sprouted.` : n ? 'The berry bushes have regrown overnight.' : k ? `${k} new berry ${k > 1 ? 'bushes have' : 'bush has'} sprouted overnight.` : '';
+    if (msg) setTimeout(() => G.ui?.toast?.(msg, 2.8), 2600);
   });
   function updateBushes(dt) {
     for (const b of W.bushes) {
@@ -275,6 +308,7 @@ export function createSurvival(G) {
         b.leaf.scale.set(1 - b.bare * 0.12, 1 - b.bare * 0.22, 1 - b.bare * 0.12);
         b.twigs.visible = b.bare > 0.05; b.twigs.scale.setScalar(Math.max(0.01, b.bare));
       }
+      if (b.sprout !== undefined && b.sprout < 1) { b.sprout = Math.min(1, b.sprout + dt * 0.7); const e = 1 - Math.pow(1 - b.sprout, 3); b.group.scale.set(e, e * (1 + Math.sin(b.sprout * Math.PI) * 0.15), e); continue; }
       if (b.jiggle > 0) { b.jiggle = Math.max(0, b.jiggle - dt); const k = b.jiggle * 2; b.group.scale.set(1 + Math.sin(G.time * 40) * 0.07 * k, 1 - Math.sin(G.time * 40) * 0.06 * k, 1 + Math.cos(G.time * 40) * 0.07 * k); }
       else if (b.group.scale.x !== 1) b.group.scale.set(1, 1, 1);
     }
@@ -423,7 +457,7 @@ export function createSurvival(G) {
     G.player.head?.scale && G.player.head.scale.set(1.08, 0.94, 1.08); chew = 0.45;
   };
   let chew = 0;
-  s.damage = (amount, cause = 'unknown') => {
+  s.damage = (amount, cause = 'unknown', srcPos = null) => {   // srcPos: attacker position for knockback (creatures pass it)
     if (s.god || G.mode !== 'playing' || s.stats.health <= 0) return;
     if (iframe > 0 && amount < 999) return;
     s.stats.health = Math.max(0, s.stats.health - amount); s.lastDamage = 0; s.cause = cause; iframe = IFRAMES;
@@ -432,7 +466,7 @@ export function createSurvival(G) {
     // (single damage number lives in the HUD next to the health bar: see ui.js #dmgnum)
     shakeEl('st-hp');
     // knockback away from the attacker
-    const src = /bear/i.test(cause) ? G.bear?.pos : /deer/i.test(cause) ? G.deer?.pos : null;
+    const src = srcPos || (/bear/i.test(cause) ? G.bear?.pos : /deer/i.test(cause) ? G.deer?.pos : null);
     if (src && amount >= 5) {
       let dx = p.x - src.x, dz = p.z - src.z; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
       const f = Math.min(16, 6 + amount * 0.3); kb.set(dx * f, 0, dz * f);
