@@ -55,7 +55,7 @@ Already in place, so don't redo them:
 
 ## Music and sound (owner: audio agent)
 - Near the fire (inside about 14 m): a rich, warm fire crackle (pops, hiss, low roar scaled by fuel), and music ducks almost silent.
-- Away from the fire by day: procedural folk-country music. Fingerpicked acoustic guitar or banjo (Karplus–Strong plucks), simple I–IV–V progressions, a gentle upright-bass root, an occasional harmonica or fiddle-like lead. Calm, outdoorsy, loopable without being annoying, with varied phrases.
+- Away from the fire by day: procedural Zelda-style adventure music (original tunes). Fingerpicked acoustic guitar or banjo (Karplus–Strong plucks), simple I–IV–V progressions, a gentle upright-bass root, an occasional harmonica or fiddle-like lead. Calm, outdoorsy, loopable without being annoying, with varied phrases.
 - As dusk hits it cross-fades into a **thriller score**: low drones, pulsing ostinato, tremolo strings, dissonant swells and heartbeat-synced hits rising with `G.threat`.
 - At dawn it cross-fades back.
 - New events the other agents emit should get sounds: wolf howls, snarls and bites, gray bear roars, Alpha roar, key pickup chime, gate unlock clunk, fire level-up whoosh, region-unlock fanfare, and animal ambience (bird flaps, owl hoots).
