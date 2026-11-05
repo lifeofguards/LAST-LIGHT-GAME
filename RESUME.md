@@ -11,13 +11,13 @@ The adventure expansion is done and pushed (commits 008d4c3, e8b157b, 0421387):
 
 The full design is in `docs/EXPANSION.md`.
 
-**Deployed 2026-11-05:** https://lifeofguards.github.io/last-light-demo/ (public repo, Pages deploys from GitHub Actions on every push to main). The steps below are done.
+**Deployed 2026-11-05:** https://lifeofguards.github.io/LAST-LIGHT-GAME/ (public repo, Pages deploys from GitHub Actions on every push to main). The steps below are done.
 - The Chrome that Claude controls (Claude in Chrome) is NOT signed in to GitHub, and the `gh` CLI isn't logged in. SSH push works.
 - The owner already approved making the repo public. Once someone is signed in as lifeofguards:
   1. In Settings → Danger Zone, choose Change visibility → Public.
   2. In Settings → Pages, set Source to GitHub Actions.
   3. Push or re-run `.github/workflows/pages.yml`.
-  4. Check https://lifeofguards.github.io/last-light-demo/ and add the link to the README.
+  4. Check https://lifeofguards.github.io/LAST-LIGHT-GAME/ and add the link to the README.
 
 **Open for later:**
 - Multiplayer (deferred by the owner).

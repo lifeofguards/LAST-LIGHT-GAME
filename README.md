@@ -2,7 +2,7 @@
 
 A one-level browser survival game inspired by Roblox's *99 Nights in the Forest*. Keep the campfire burning and see how many nights you can survive. By day you chop trees, gather berries, level up the fire to open more land, and clear wolf packs and gray bears for cave keys. At night you stay in the fire's light while the Deer and the bear hunt you.
 
-**▶ Play it live: https://lifeofguards.github.io/last-light-demo/**
+**▶ Play it live: https://lifeofguards.github.io/LAST-LIGHT-GAME/**
 
 Three.js with plain ES modules. There is no build step.
 
